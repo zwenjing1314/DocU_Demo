@@ -1,0 +1,7 @@
+.venv
+.idea
+
+ocr_inspector/__pycache__
+
+ocr_inspector/outputs
+ocr_inspector/uploads

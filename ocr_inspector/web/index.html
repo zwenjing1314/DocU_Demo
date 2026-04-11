@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OCR Inspector</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 1100px;
+      margin: 32px auto;
+      padding: 0 16px;
+      line-height: 1.5;
+    }
+    h1, h2 {
+      margin-bottom: 8px;
+    }
+    form {
+      border: 1px solid #ddd;
+      border-radius: 10px;
+      padding: 16px;
+      margin-bottom: 24px;
+    }
+    .row {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 16px;
+      margin-bottom: 12px;
+    }
+    label {
+      display: block;
+      font-weight: bold;
+      margin-bottom: 6px;
+    }
+    input[type="text"], input[type="number"], input[type="file"] {
+      width: 100%;
+      padding: 8px;
+      box-sizing: border-box;
+    }
+    button {
+      padding: 10px 16px;
+      cursor: pointer;
+    }
+    .result {
+      border-top: 1px solid #ddd;
+      padding-top: 16px;
+    }
+    .controls {
+      border: 1px solid #ddd;
+      border-radius: 10px;
+      padding: 16px;
+      margin: 16px 0;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px;
+      background: #fafafa;
+    }
+    .hidden {
+      display: none;
+    }
+    .word-section {
+      margin-top: 12px;
+    }
+    .section-heading {
+      font-weight: bold;
+      margin-bottom: 6px;
+      font-size: 14px;
+    }
+    .word-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .word-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 8px;
+      border-radius: 999px;
+      font-size: 13px;
+      background: #eef2ff;
+      border: 1px solid #c7d2fe;
+    }
+    .word-chip.low {
+      background: #ffe5e5;
+      border-color: #ffb3b3;
+      color: #c0392b;
+    }
+    .word-chip.hit {
+      background: #fff3cd;
+      border-color: #ffe38f;
+      color: #8a6d3b;
+    }
+    .word-chip__conf {
+      font-size: 12px;
+      color: #555;
+    }
+    .page-card {
+      border: 1px solid #ddd;
+      border-radius: 10px;
+      padding: 12px;
+      margin-bottom: 16px;
+    }
+    .preview-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-top: 10px;
+    }
+    img {
+      width: 100%;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+    }
+    .muted {
+      color: #666;
+      font-size: 14px;
+    }
+    pre {
+      background: #f6f8fa;
+      padding: 12px;
+      overflow-x: auto;
+      border-radius: 8px;
+    }
+  </style>
+</head>
+<body>
+  <h1>OCR Inspector</h1>
+  <p class="muted">上传 PDF，输出 <code>ocr.json</code>、纯文本以及每页叠框图。蓝框是 line bbox，红框是 word bbox。</p>
+
+  <form id="ocrForm">
+    <div style="margin-bottom: 12px;">
+      <label for="pdf">PDF 文件</label>
+      <input id="pdf" name="file" type="file" accept="application/pdf" required />
+    </div>
+
+    <div class="row">
+      <div>
+        <label for="ocr_lang">OCR 语言</label>
+        <input id="ocr_lang" name="ocr_lang" type="text" value="eng" />
+      </div>
+      <div>
+        <label for="dpi">DPI</label>
+        <input id="dpi" name="dpi" type="number" value="200" min="72" max="600" />
+      </div>
+      <div>
+        <label for="tesseract_config">Tesseract 配置</label>
+        <input id="tesseract_config" name="tesseract_config" type="text" value="--oem 3 --psm 3" />
+      </div>
+    </div>
+
+    <button type="submit">开始 OCR</button>
+  </form>
+
+  <div id="status" class="muted"></div>
+  <div id="analysisControls" class="controls hidden">
+    <div>
+      <label for="confidenceThreshold">低置信度阈值 (%)</label>
+      <input id="confidenceThreshold" type="number" value="85" min="0" max="100" />
+    </div>
+    <div>
+      <label for="searchTerm">搜索词</label>
+      <input id="searchTerm" type="text" placeholder="例如 invoice" />
+    </div>
+  </div>
+  <div id="result" class="result"></div>
+
+  <script>
+    const form = document.getElementById('ocrForm');
+    const statusEl = document.getElementById('status');
+    const resultEl = document.getElementById('result');
+    const controlsEl = document.getElementById('analysisControls');
+    const thresholdInput = document.getElementById('confidenceThreshold');
+    const searchInput = document.getElementById('searchTerm');
+    const state = {
+      data: null,
+      threshold: Number(thresholdInput.value) || 85,
+      search: ''
+    };
+
+    const MAX_WORD_CHIPS = 60;
+
+    const normalizeThreshold = (value) => {
+      const parsed = Number(value);
+      if (Number.isFinite(parsed)) {
+        return Math.min(100, Math.max(0, parsed));
+      }
+      return 85;
+    };
+
+    const escapeHtml = (str = '') =>
+      str.replace(/[&<>"']/g, (match) => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;'
+      }[match]));
+
+    const formatConfidence = (value) =>
+      Number.isFinite(value) && value >= 0 ? `${value.toFixed(1)}%` : 'N/A';
+
+    const renderWordSection = (title, words, chipClass) => {
+      if (!words.length) {
+        return `<p class="muted">${title}：暂无数据</p>`;
+      }
+      const chips = words.slice(0, MAX_WORD_CHIPS).map((word) => `
+        <span
+          class="word-chip ${chipClass}"
+          title="Line ${word.line_num ?? '-'} · Confidence ${formatConfidence(word.confidence)}"
+        >
+          ${escapeHtml(word.text)}
+          <span class="word-chip__conf">${formatConfidence(word.confidence)}</span>
+        </span>
+      `).join('');
+      const remaining = words.length > MAX_WORD_CHIPS
+        ? `<span class="muted">+${words.length - MAX_WORD_CHIPS} 更多…</span>`
+        : '';
+      return `
+        <div class="word-section">
+          <div class="section-heading">${title}（${words.length}）</div>
+          <div class="word-chips">${chips}${remaining}</div>
+        </div>
+      `;
+    };
+
+    const renderResults = () => {
+      if (!state.data) {
+        resultEl.innerHTML = '';
+        return;
+      }
+
+      const downloadHtml = `
+        <h2>结果下载</h2>
+        <p>
+          <a href="${state.data.downloads.ocr_json}" target="_blank">下载 ocr.json</a>
+          &nbsp;|&nbsp;
+          <a href="${state.data.downloads.full_text}" target="_blank">下载 full_text.txt</a>
+        </p>
+        <pre>${JSON.stringify({
+          job_id: state.data.job_id,
+          source_file: state.data.source_file,
+          page_count: state.data.page_count,
+          config: state.data.config,
+        }, null, 2)}</pre>
+      `;
+
+      const searchTerm = state.search;
+
+      const pagesHtml = state.data.page_previews.map((page) => {
+        const words = page.words ?? [];
+        const lowConfidenceWords = words.filter(
+          (word) => word.confidence >= 0 && word.confidence < state.threshold
+        );
+        const searchHits = searchTerm
+          ? words.filter((word) =>
+              word.text.toLowerCase().includes(searchTerm)
+            )
+          : [];
+
+        return `
+          <div class="page-card">
+            <h3>Page ${page.page_num}</h3>
+            <p class="muted">
+              尺寸：${page.image_width} × ${page.image_height}，
+              words：${page.word_count}，
+              lines：${page.line_count}，
+              <a href="${page.text_url}" target="_blank">查看该页纯文本</a>
+            </p>
+            <div class="preview-grid">
+              <div>
+                <div class="muted">原始页图</div>
+                <a href="${page.image_url}" target="_blank"><img src="${page.image_url}" alt="page-${page.page_num}" /></a>
+              </div>
+              <div>
+                <div class="muted">叠框图</div>
+                <a href="${page.overlay_url}" target="_blank"><img src="${page.overlay_url}" alt="overlay-${page.page_num}" /></a>
+              </div>
+            </div>
+            ${renderWordSection(
+              `低置信度词（低于 ${state.threshold}%）`,
+              lowConfidenceWords,
+              'low'
+            )}
+            ${searchTerm ? renderWordSection(
+              `搜索匹配 “${escapeHtml(searchInput.value)}”`,
+              searchHits,
+              'hit'
+            ) : ''}
+          </div>
+        `;
+      }).join('');
+
+      resultEl.innerHTML = downloadHtml + '<h2>页面预览</h2>' + pagesHtml;
+    };
+
+    thresholdInput.addEventListener('input', () => {
+      state.threshold = normalizeThreshold(thresholdInput.value);
+      renderResults();
+    });
+
+    searchInput.addEventListener('input', () => {
+      state.search = searchInput.value.trim().toLowerCase();
+      renderResults();
+    });
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      resultEl.innerHTML = '';
+      statusEl.textContent = '正在处理，请稍候……';
+      controlsEl.classList.add('hidden');
+      state.data = null;
+      renderResults();
+
+      const formData = new FormData(form);
+
+      try {
+        const response = await fetch('/ocr', {
+          method: 'POST',
+          body: formData,
+        });
+
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.detail || '请求失败');
+        }
+
+        statusEl.textContent = '处理完成。';
+        state.data = data;
+        state.threshold = normalizeThreshold(thresholdInput.value);
+        state.search = searchInput.value.trim().toLowerCase();
+        controlsEl.classList.remove('hidden');
+        renderResults();
+      } catch (error) {
+        statusEl.textContent = '处理失败。';
+        resultEl.innerHTML = `<pre>${error.message}</pre>`;
+      }
+    });
+  </script>
+</body>
+</html>
