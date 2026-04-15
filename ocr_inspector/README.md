@@ -1,13 +1,16 @@
 # OCR Inspector（Ubuntu 版）
 
-这是一个最小可运行的 Document AI Demo：
+一个最小但可扩展的 OCR Demo：
 
-- 上传一份 PDF
-- 将 PDF 渲染成页图
+- 上传 PDF 或图片
+- 渲染成统一页图
 - 调用 Tesseract OCR
-- 输出 `ocr.json`
-- 导出每页叠框图（word / line bbox）
-- 导出纯文本 `full_text.txt`
+- 导出 `ocr.json`
+- 导出 `full_text.txt`
+- 导出每页 Markdown
+- 导出每页叠框图
+- 生成简单错误分析页
+- 保留可复用的 `uploads / outputs / json` 任务骨架
 
 ## 1. Ubuntu 安装依赖
 
@@ -18,7 +21,7 @@ sudo apt update
 sudo apt install -y python3-venv tesseract-ocr tesseract-ocr-eng
 ```
 
-如果你需要中文 OCR，可以额外安装：
+如果需要中文 OCR，可以额外安装：
 
 ```bash
 sudo apt install -y tesseract-ocr-chi-sim
@@ -45,110 +48,23 @@ uvicorn app:app --reload
 http://127.0.0.1:8000
 ```
 
-## 3. 使用说明
 
-1. 打开浏览器。
-2. 选择一个 PDF 文件。
-3. 设置 OCR 语言，例如：
-   - `eng`
-   - `chi_sim`
-   - `eng+chi_sim`
-4. 点击“开始 OCR”。
-5. 完成后下载：
-   - `ocr.json`
-   - `full_text.txt`
-   - 每页叠框图
 
-## 4. 返回结果说明
+## 发现问题
+我的这个ocr - demo我运行完了后，发现有些pdf页面会出现以下问题：
+1. 当页面的图和表格多的话，它的置信度低的词语会变多。
+2. 有的特殊标点符号无法识别出来。
+3. 页面的页数有时候正常bboxing，有时候会出现问题。 
+4. 图片上方或下方的字母有时候无法正常bboxing。
+5. 对于那些简笔的图形它会识别错成圆圈。
+6. 对于45度的倾斜角度的单词无法正常识别
 
-### `ocr.json` 的结构
 
-```json
-{
-  "source_file": "original.pdf",
-  "created_at": "2026-04-07T00:00:00+00:00",
-  "config": {
-    "dpi": 200,
-    "lang": "eng",
-    "tesseract_config": "--oem 3 --psm 3",
-    "tesseract_cmd": "tesseract"
-  },
-  "page_count": 1,
-  "pages": [
-    {
-      "page_num": 1,
-      "image_width": 1654,
-      "image_height": 2339,
-      "words": [],
-      "lines": [],
-      "text": "..."
-    }
-  ]
-}
-```
 
-### words 字段示例
+# Layout Reader
+新增主题：标题、段落、列表、页眉页脚、阅读顺序。
+继承：1。
+最小交付：把一份多段落 PDF 转成带层级的 Markdown。
+过关标准：标题层级和正文顺序基本正确，不把页眉页脚混进正文。
 
-```json
-{
-  "page_num": 1,
-  "text": "Invoice",
-  "confidence": 96.12,
-  "bbox": {
-    "left": 120,
-    "top": 88,
-    "width": 140,
-    "height": 35,
-    "right": 260,
-    "bottom": 123
-  },
-  "block_num": 1,
-  "par_num": 1,
-  "line_num": 1,
-  "word_num": 1
-}
-```
 
-### lines 字段示例
-
-```json
-{
-  "page_num": 1,
-  "text": "Invoice Number 12345",
-  "confidence": 93.4,
-  "bbox": {
-    "left": 118,
-    "top": 86,
-    "width": 430,
-    "height": 38,
-    "right": 548,
-    "bottom": 124
-  },
-  "block_num": 1,
-  "par_num": 1,
-  "line_num": 1,
-  "words": ["Invoice", "Number", "12345"]
-}
-```
-
-## 5. 目录结构
-
-```text
-ocr_inspector_ubuntu/
-  app.py
-  ocr_engine.py
-  requirements.txt
-  README.md
-  web/
-    index.html
-  uploads/
-  outputs/
-```
-
-## 6. 可以如何继续扩展
-
-- 在页面上增加“只看低置信度词”的过滤器
-- 支持图片上传（不仅是 PDF）
-- 增加按页导出 Markdown
-- 加一个简单的错误分析页
-- 为后续 Demo 复用这套 `uploads / outputs / json` 骨架

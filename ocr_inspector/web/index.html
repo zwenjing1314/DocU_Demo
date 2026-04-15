@@ -5,181 +5,324 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>OCR Inspector</title>
   <style>
+    :root {
+      --bg: #efe7db;
+      --panel: rgba(255, 252, 246, 0.94);
+      --ink: #2b2621;
+      --muted: #6d665d;
+      --line: #d8cbbb;
+      --accent: #9a4e2e;
+      --accent-soft: #f3dfd2;
+      --warn: #ba4234;
+      --shadow: 0 18px 48px rgba(83, 59, 37, 0.08);
+    }
+    * {
+      box-sizing: border-box;
+    }
     body {
-      font-family: Arial, sans-serif;
-      max-width: 1100px;
-      margin: 32px auto;
-      padding: 0 16px;
-      line-height: 1.5;
+      margin: 0;
+      color: var(--ink);
+      font-family: "Segoe UI", "PingFang SC", "Hiragino Sans GB", sans-serif;
+      background:
+        radial-gradient(circle at top right, rgba(154, 78, 46, 0.18), transparent 30%),
+        linear-gradient(180deg, #f5efe5 0%, var(--bg) 100%);
     }
-    h1, h2 {
-      margin-bottom: 8px;
+    main {
+      width: min(1180px, calc(100vw - 32px));
+      margin: 0 auto;
+      padding: 28px 0 48px;
     }
-    form {
-      border: 1px solid #ddd;
-      border-radius: 10px;
-      padding: 16px;
-      margin-bottom: 24px;
+    .hero,
+    .panel,
+    .page-card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      box-shadow: var(--shadow);
+    }
+    .hero {
+      padding: 28px;
+      margin-bottom: 18px;
+    }
+    .eyebrow {
+      font-size: 13px;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 10px;
+    }
+    h1, h2, h3 {
+      margin: 0 0 10px;
+    }
+    p {
+      margin: 0;
+    }
+    .muted {
+      color: var(--muted);
+    }
+    .panel {
+      padding: 20px;
+      margin-bottom: 16px;
     }
     .row {
       display: grid;
-      grid-template-columns: 1fr 1fr 1fr;
-      gap: 16px;
-      margin-bottom: 12px;
+      gap: 14px;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
     }
     label {
       display: block;
-      font-weight: bold;
-      margin-bottom: 6px;
+      font-weight: 700;
+      margin-bottom: 8px;
     }
-    input[type="text"], input[type="number"], input[type="file"] {
+    input[type="text"],
+    input[type="number"],
+    input[type="file"] {
       width: 100%;
-      padding: 8px;
-      box-sizing: border-box;
+      padding: 11px 12px;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      background: white;
     }
     button {
-      padding: 10px 16px;
+      border: none;
+      border-radius: 999px;
+      padding: 12px 18px;
+      background: var(--accent);
+      color: white;
+      font-weight: 700;
       cursor: pointer;
     }
-    .result {
-      border-top: 1px solid #ddd;
-      padding-top: 16px;
+    button:hover {
+      opacity: 0.92;
+    }
+    .checkbox {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      font-weight: 600;
+    }
+    .checkbox input {
+      width: 18px;
+      height: 18px;
     }
     .controls {
-      border: 1px solid #ddd;
-      border-radius: 10px;
-      padding: 16px;
-      margin: 16px 0;
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-      gap: 16px;
-      background: #fafafa;
+      gap: 14px;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      margin-top: 14px;
     }
     .hidden {
       display: none;
     }
+    .result {
+      display: grid;
+      gap: 16px;
+    }
+    .stats-grid {
+      display: grid;
+      gap: 12px;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+    }
+    .stat {
+      background: white;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 14px 16px;
+    }
+    .stat strong {
+      display: block;
+      font-size: 28px;
+      margin-top: 8px;
+    }
+    .stat.warn strong {
+      color: var(--warn);
+    }
+    .download-links,
+    .page-links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 14px;
+      margin-top: 14px;
+    }
+    .pill-link {
+      display: inline-flex;
+      align-items: center;
+      padding: 8px 12px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: white;
+      color: var(--accent);
+      text-decoration: none;
+      font-size: 14px;
+    }
+    .pages {
+      display: grid;
+      gap: 16px;
+    }
+    .page-card {
+      padding: 18px;
+    }
+    .page-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      align-items: baseline;
+      flex-wrap: wrap;
+    }
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      padding: 5px 10px;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-size: 13px;
+      font-weight: 700;
+    }
+    .preview-grid {
+      display: grid;
+      gap: 16px;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      margin-top: 14px;
+    }
+    img {
+      width: 100%;
+      display: block;
+      border-radius: 14px;
+      border: 1px solid var(--line);
+      background: white;
+    }
     .word-section {
-      margin-top: 12px;
+      margin-top: 16px;
     }
     .section-heading {
-      font-weight: bold;
-      margin-bottom: 6px;
-      font-size: 14px;
+      font-weight: 700;
+      margin-bottom: 8px;
     }
     .word-chips {
       display: flex;
       flex-wrap: wrap;
-      gap: 6px;
+      gap: 8px;
     }
     .word-chip {
       display: inline-flex;
       align-items: center;
-      gap: 4px;
-      padding: 4px 8px;
+      gap: 6px;
+      padding: 6px 10px;
       border-radius: 999px;
+      border: 1px solid #d8d8d8;
+      background: white;
       font-size: 13px;
-      background: #eef2ff;
-      border: 1px solid #c7d2fe;
     }
     .word-chip.low {
-      background: #ffe5e5;
-      border-color: #ffb3b3;
-      color: #c0392b;
+      background: #fce7e5;
+      border-color: #f5b3ad;
+      color: #a8362c;
     }
     .word-chip.hit {
-      background: #fff3cd;
-      border-color: #ffe38f;
-      color: #8a6d3b;
+      background: #fef0cd;
+      border-color: #f5d67a;
+      color: #8b6422;
     }
     .word-chip__conf {
-      font-size: 12px;
-      color: #555;
-    }
-    .page-card {
-      border: 1px solid #ddd;
-      border-radius: 10px;
-      padding: 12px;
-      margin-bottom: 16px;
-    }
-    .preview-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 16px;
-      margin-top: 10px;
-    }
-    img {
-      width: 100%;
-      border: 1px solid #ddd;
-      border-radius: 8px;
-    }
-    .muted {
-      color: #666;
-      font-size: 14px;
+      color: var(--muted);
     }
     pre {
-      background: #f6f8fa;
-      padding: 12px;
+      margin-top: 14px;
+      background: white;
+      border-radius: 14px;
+      border: 1px solid var(--line);
+      padding: 14px;
       overflow-x: auto;
-      border-radius: 8px;
+    }
+    .empty {
+      padding: 16px;
+      border-radius: 14px;
+      border: 1px dashed var(--line);
+      background: white;
+      color: var(--muted);
+    }
+    a {
+      color: var(--accent);
     }
   </style>
 </head>
 <body>
-  <h1>OCR Inspector</h1>
-  <p class="muted">上传 PDF，输出 <code>ocr.json</code>、纯文本以及每页叠框图。蓝框是 line bbox，红框是 word bbox。</p>
+  <main>
+    <section class="hero">
+      <div class="eyebrow">OCR Inspector</div>
+      <h1>PDF / 图片 OCR Demo</h1>
+      <p class="muted">上传 PDF 或图片，产出统一的 <code>uploads / outputs / json</code> 任务骨架，包含 <code>ocr.json</code>、纯文本、每页 Markdown、叠框图和简单错误分析页。</p>
+    </section>
 
-  <form id="ocrForm">
-    <div style="margin-bottom: 12px;">
-      <label for="pdf">PDF 文件</label>
-      <input id="pdf" name="file" type="file" accept="application/pdf" required />
-    </div>
-
-    <div class="row">
-      <div>
-        <label for="ocr_lang">OCR 语言</label>
-        <input id="ocr_lang" name="ocr_lang" type="text" value="eng" />
+    <form id="ocrForm" class="panel">
+      <div style="margin-bottom: 14px;">
+        <label for="fileInput">文件</label>
+        <input id="fileInput" name="file" type="file" accept=".pdf,image/png,image/jpeg,image/jpg,image/bmp,image/tiff,image/webp" required />
       </div>
-      <div>
-        <label for="dpi">DPI</label>
-        <input id="dpi" name="dpi" type="number" value="200" min="72" max="600" />
-      </div>
-      <div>
-        <label for="tesseract_config">Tesseract 配置</label>
-        <input id="tesseract_config" name="tesseract_config" type="text" value="--oem 3 --psm 3" />
-      </div>
-    </div>
 
-    <button type="submit">开始 OCR</button>
-  </form>
+      <div class="row">
+        <div>
+          <label for="ocr_lang">OCR 语言</label>
+          <input id="ocr_lang" name="ocr_lang" type="text" value="eng" />
+        </div>
+        <div>
+          <label for="dpi">DPI</label>
+          <input id="dpi" name="dpi" type="number" value="200" min="72" max="600" />
+        </div>
+        <div>
+          <label for="tesseract_config">Tesseract 配置</label>
+          <input id="tesseract_config" name="tesseract_config" type="text" value="--oem 3 --psm 3" />
+        </div>
+      </div>
 
-  <div id="status" class="muted"></div>
-  <div id="analysisControls" class="controls hidden">
-    <div>
-      <label for="confidenceThreshold">低置信度阈值 (%)</label>
-      <input id="confidenceThreshold" type="number" value="85" min="0" max="100" />
-    </div>
-    <div>
-      <label for="searchTerm">搜索词</label>
-      <input id="searchTerm" type="text" placeholder="例如 invoice" />
-    </div>
-  </div>
-  <div id="result" class="result"></div>
+      <div style="margin-top: 16px;">
+        <button type="submit">开始 OCR</button>
+      </div>
+    </form>
+
+    <section id="controlsPanel" class="panel hidden">
+      <h2>结果过滤</h2>
+      <div class="controls">
+        <div>
+          <label for="confidenceThreshold">低置信度阈值 (%)</label>
+          <input id="confidenceThreshold" type="number" value="85" min="0" max="100" />
+        </div>
+        <div>
+          <label for="searchTerm">搜索词</label>
+          <input id="searchTerm" type="text" placeholder="例如 invoice / total / 日期" />
+        </div>
+        <label class="checkbox" for="onlyLowConfidence">
+          <input id="onlyLowConfidence" type="checkbox" />
+          只看低置信度词所在页面
+        </label>
+      </div>
+    </section>
+
+    <div id="status" class="muted"></div>
+    <section id="result" class="result"></section>
+  </main>
 
   <script>
     const form = document.getElementById('ocrForm');
-    const statusEl = document.getElementById('status');
     const resultEl = document.getElementById('result');
-    const controlsEl = document.getElementById('analysisControls');
+    const statusEl = document.getElementById('status');
+    const controlsPanel = document.getElementById('controlsPanel');
     const thresholdInput = document.getElementById('confidenceThreshold');
     const searchInput = document.getElementById('searchTerm');
-    const state = {
-      data: null,
-      threshold: Number(thresholdInput.value) || 85,
-      search: ''
-    };
+    const onlyLowConfidenceInput = document.getElementById('onlyLowConfidence');
 
     const MAX_WORD_CHIPS = 60;
 
+    const state = {
+      data: null,
+      threshold: Number(thresholdInput.value) || 85,
+      search: '',
+      onlyLowConfidence: false
+    };
+
+
+    // 确保输入的阈值在 0-100 之间，防止用户乱填数字导致程序出错。
     const normalizeThreshold = (value) => {
       const parsed = Number(value);
       if (Number.isFinite(parsed)) {
@@ -188,21 +331,23 @@
       return 85;
     };
 
-    const escapeHtml = (str = '') =>
-      str.replace(/[&<>"']/g, (match) => ({
-        '&': '&amp;',
-        '<': '&lt;',
-        '>': '&gt;',
-        '"': '&quot;',
-        "'": '&#39;'
-      }[match]));
+    // 安全卫士。把 <, > 等特殊字符转义，防止用户输入恶意代码（XSS 攻击）
+    const escapeHtml = (str = '') => String(str).replace(/[&<>"']/g, (match) => ({
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#39;'
+    }[match]));
 
+    // 把数字（如 85.123）变成带百分号的字符串（如 "85.1%"）
     const formatConfidence = (value) =>
       Number.isFinite(value) && value >= 0 ? `${value.toFixed(1)}%` : 'N/A';
 
+    // 专门画“单词标签”的。比如低置信度的词会标红，它会循环生成一堆 <span> 标签
     const renderWordSection = (title, words, chipClass) => {
       if (!words.length) {
-        return `<p class="muted">${title}：暂无数据</p>`;
+        return `<div class="empty">${title}：暂无数据</div>`;
       }
       const chips = words.slice(0, MAX_WORD_CHIPS).map((word) => `
         <span
@@ -224,74 +369,139 @@
       `;
     };
 
-    const renderResults = () => {
-      if (!state.data) {
-        resultEl.innerHTML = '';
-        return;
-      }
-
-      const downloadHtml = `
-        <h2>结果下载</h2>
-        <p>
-          <a href="${state.data.downloads.ocr_json}" target="_blank">下载 ocr.json</a>
-          &nbsp;|&nbsp;
-          <a href="${state.data.downloads.full_text}" target="_blank">下载 full_text.txt</a>
-        </p>
-        <pre>${JSON.stringify({
-          job_id: state.data.job_id,
-          source_file: state.data.source_file,
-          page_count: state.data.page_count,
-          config: state.data.config,
-        }, null, 2)}</pre>
+    // 画顶部的统计面板。显示任务 ID、页数、低置信度词总数，以及下载链接。
+    const renderSummary = (data) => {
+      const statsHtml = `
+        <div class="stats-grid">
+          <article class="stat">
+            <div class="muted">任务 ID</div>
+            <strong>${escapeHtml(data.job_id)}</strong>
+          </article>
+          <article class="stat">
+            <div class="muted">源类型</div>
+            <strong>${escapeHtml(data.source_kind)}</strong>
+          </article>
+          <article class="stat">
+            <div class="muted">页数</div>
+            <strong>${data.page_count}</strong>
+          </article>
+          <article class="stat warn">
+            <div class="muted">低置信度词</div>
+            <strong>${data.analysis.low_confidence_word_count}</strong>
+          </article>
+        </div>
       `;
 
-      const searchTerm = state.search;
+      const downloadHtml = `
+        <div class="download-links">
+          <a class="pill-link" href="${data.downloads.ocr_json}" target="_blank">ocr.json</a>
+          <a class="pill-link" href="${data.downloads.full_text}" target="_blank">full_text.txt</a>
+          <a class="pill-link" href="${data.downloads.analysis_page}" target="_blank">错误分析页</a>
+          <a class="pill-link" href="${data.downloads.job_manifest}" target="_blank">job_manifest.json</a>
+        </div>
+      `;
 
-      const pagesHtml = state.data.page_previews.map((page) => {
+      return `
+        <section class="panel">
+          <h2>结果总览</h2>
+          <p class="muted">默认低置信度阈值为 ${data.analysis.default_low_confidence_threshold}% 。</p>
+          ${statsHtml}
+          ${downloadHtml}
+          <pre>${escapeHtml(JSON.stringify({
+            source_file: data.source_file,
+            source_kind: data.source_kind,
+            page_count: data.page_count,
+            config: data.config,
+            artifacts: data.artifacts
+          }, null, 2))}</pre>
+        </section>
+      `;
+    };
+
+    // 最复杂的部分。它会遍历每一页：
+      // 过滤：根据设定的阈值和搜索词，决定哪些页面该显示。
+      // 生成卡片：为每一页创建一个 article，里面包含图片预览（原图和叠框图）、文本链接以及低置信度词的列表。
+    const renderPages = (data) => {
+      const searchTerm = state.search;
+      const visiblePages = data.page_previews.filter((page) => {
+        const words = page.words ?? [];
+        const lowConfidenceWords = words.filter(
+          (word) => word.confidence >= 0 && word.confidence < state.threshold
+        );
+        const matchesSearch = !searchTerm || words.some((word) =>
+          String(word.text || '').toLowerCase().includes(searchTerm)
+        );
+
+        if (state.onlyLowConfidence && !lowConfidenceWords.length) {
+          return false;
+        }
+        return matchesSearch;
+      });
+
+      if (!visiblePages.length) {
+        return '<section class="panel"><div class="empty">当前过滤条件下没有可显示的页面。</div></section>';
+      }
+
+      const pagesHtml = visiblePages.map((page) => {
         const words = page.words ?? [];
         const lowConfidenceWords = words.filter(
           (word) => word.confidence >= 0 && word.confidence < state.threshold
         );
         const searchHits = searchTerm
           ? words.filter((word) =>
-              word.text.toLowerCase().includes(searchTerm)
+              String(word.text || '').toLowerCase().includes(searchTerm)
             )
           : [];
 
         return `
-          <div class="page-card">
-            <h3>Page ${page.page_num}</h3>
-            <p class="muted">
-              尺寸：${page.image_width} × ${page.image_height}，
-              words：${page.word_count}，
-              lines：${page.line_count}，
-              <a href="${page.text_url}" target="_blank">查看该页纯文本</a>
-            </p>
+          <article class="page-card">
+            <div class="page-head">
+              <div>
+                <h3>Page ${page.page_num}</h3>
+                <p class="muted">尺寸 ${page.image_width} × ${page.image_height}，共 ${page.word_count} 个词，${page.line_count} 行。</p>
+              </div>
+              <div class="tag">低置信度 ${lowConfidenceWords.length}</div>
+            </div>
+
+            <div class="page-links">
+              <a class="pill-link" href="${page.text_url}" target="_blank">纯文本</a>
+              <a class="pill-link" href="${page.markdown_url}" target="_blank">Markdown</a>
+              <a class="pill-link" href="${page.image_url}" target="_blank">页图</a>
+              <a class="pill-link" href="${page.overlay_url}" target="_blank">叠框图</a>
+            </div>
+
             <div class="preview-grid">
               <div>
-                <div class="muted">原始页图</div>
+                <div class="muted" style="margin-bottom: 8px;">原始页图</div>
                 <a href="${page.image_url}" target="_blank"><img src="${page.image_url}" alt="page-${page.page_num}" /></a>
               </div>
               <div>
-                <div class="muted">叠框图</div>
+                <div class="muted" style="margin-bottom: 8px;">叠框图</div>
                 <a href="${page.overlay_url}" target="_blank"><img src="${page.overlay_url}" alt="overlay-${page.page_num}" /></a>
               </div>
             </div>
-            ${renderWordSection(
-              `低置信度词（低于 ${state.threshold}%）`,
-              lowConfidenceWords,
-              'low'
-            )}
-            ${searchTerm ? renderWordSection(
-              `搜索匹配 “${escapeHtml(searchInput.value)}”`,
-              searchHits,
-              'hit'
-            ) : ''}
-          </div>
+
+            ${renderWordSection(`低置信度词（低于 ${state.threshold}%）`, lowConfidenceWords, 'low')}
+            ${searchTerm ? renderWordSection(`搜索匹配“${escapeHtml(searchInput.value)}”`, searchHits, 'hit') : ''}
+          </article>
         `;
       }).join('');
 
-      resultEl.innerHTML = downloadHtml + '<h2>页面预览</h2>' + pagesHtml;
+      return `
+        <section class="panel">
+          <h2>页面预览</h2>
+          <div class="pages">${pagesHtml}</div>
+        </section>
+      `;
+    };
+
+    const renderResults = () => {
+      if (!state.data) {
+        resultEl.innerHTML = '';
+        return;
+      }
+
+      resultEl.innerHTML = renderSummary(state.data) + renderPages(state.data);
     };
 
     thresholdInput.addEventListener('input', () => {
@@ -304,20 +514,36 @@
       renderResults();
     });
 
-    form.addEventListener('submit', async (event) => {
-      event.preventDefault();
-      resultEl.innerHTML = '';
-      statusEl.textContent = '正在处理，请稍候……';
-      controlsEl.classList.add('hidden');
-      state.data = null;
+    onlyLowConfidenceInput.addEventListener('change', () => {
+      state.onlyLowConfidence = onlyLowConfidenceInput.checked;
       renderResults();
+    });
 
+    form.addEventListener('submit', async (event) => {
+      // 原理：HTML 表单默认的行为是“刷新页面并把数据拼接到 URL 后面”。这在我们的单页应用（SPA）里是不允许的。
+      // 作用：这句话相当于告诉浏览器：“别动！这个提交动作由我来接管，你不要刷新页面。”
+      event.preventDefault();
+
+      state.data = null;  // 清空旧的分析结果
+      state.threshold = normalizeThreshold(thresholdInput.value);
+      state.search = searchInput.value.trim().toLowerCase();
+      state.onlyLowConfidence = onlyLowConfidenceInput.checked;
+      controlsPanel.classList.add('hidden');  // 在文件处理期间，先把过滤和搜索框藏起来，避免用户在数据还没回来时就进行无效操作
+      resultEl.innerHTML = '';  // 把页面上之前显示的图片和文字全部删掉，准备迎接新内容
+      statusEl.textContent = '正在处理，请稍候……';  // 给用户一个视觉反馈，让他们知道程序正在干活，而不是卡死了
+
+      // 作用：这是一个非常方便的浏览器 API。它会自动扫描 <form> 标签里的所有输入项（比如你选中的 PDF 文件），并把它们打包成一个符合 HTTP 协议标准的数据包。
+      // 好处：你不需要手动去写复杂的文件上传逻辑，FormData 能自动处理文件的二进制流。
       const formData = new FormData(form);
 
+      /*fetch('/ocr', ...)：向服务器的 /ocr 地址发送请求。
+      method: 'POST'：使用 POST 方法，因为我们要给服务器发送数据（文件）。
+      await 关键字：这是一个“暂停键”。因为 OCR 识别可能需要几秒钟，JavaScript 会在这里等待服务器返回结果，
+      然后再继续执行下面的代码。如果没有 await，代码会瞬间跑完，那时候数据还没回来呢。*/
       try {
         const response = await fetch('/ocr', {
           method: 'POST',
-          body: formData,
+          body: formData
         });
 
         const data = await response.json();
@@ -327,13 +553,17 @@
 
         statusEl.textContent = '处理完成。';
         state.data = data;
+        thresholdInput.value = String(
+          normalizeThreshold(
+            thresholdInput.value || data.analysis.default_low_confidence_threshold
+          )
+        );
         state.threshold = normalizeThreshold(thresholdInput.value);
-        state.search = searchInput.value.trim().toLowerCase();
-        controlsEl.classList.remove('hidden');
+        controlsPanel.classList.remove('hidden');
         renderResults();
       } catch (error) {
         statusEl.textContent = '处理失败。';
-        resultEl.innerHTML = `<pre>${error.message}</pre>`;
+        resultEl.innerHTML = `<section class="panel"><pre>${escapeHtml(error.message || '未知错误')}</pre></section>`;
       }
     });
   </script>

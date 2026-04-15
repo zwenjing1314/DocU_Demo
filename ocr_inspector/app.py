@@ -1,19 +1,9 @@
 from __future__ import annotations
 
-"""OCR Inspector - Ubuntu 版 Demo 入口。
-
-运行后提供两个主要能力：
-1. GET /      -> 简单上传页面
-2. POST /ocr  -> 上传 PDF，执行 OCR，返回结果链接
-
-最小交付：
-- ocr.json
-- 每页叠框图
-- 纯文本导出
-"""
+"""OCR Inspector Demo 入口。"""
 
 from pathlib import Path
-from uuid import uuid4
+import json
 import os
 import shutil
 
@@ -22,26 +12,28 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from analysis_report import build_error_analysis_page
+from job_skeleton import (
+    DEFAULT_LOW_CONFIDENCE_THRESHOLD,
+    JobSkeleton,
+    detect_upload_kind,
+)
 from ocr_engine import DEFAULT_TESSERACT_CONFIG, run_ocr_pipeline
 
-# 项目根目录
 BASE_DIR = Path(__file__).resolve().parent
 UPLOADS_DIR = BASE_DIR / "uploads"
 OUTPUTS_DIR = BASE_DIR / "outputs"
 WEB_DIR = BASE_DIR / "web"
 
-# 启动时确保目录存在
-UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
-OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
-WEB_DIR.mkdir(parents=True, exist_ok=True)
+for directory in (UPLOADS_DIR, OUTPUTS_DIR, WEB_DIR):
+    directory.mkdir(parents=True, exist_ok=True)
 
 app = FastAPI(
     title="OCR Inspector",
-    description="上传 PDF，输出 ocr.json、叠框图和纯文本。",
-    version="1.0.0",
+    description="上传 PDF 或图片，输出 ocr.json、叠框图、Markdown 和错误分析页。",
+    version="1.1.0",
 )
 
-# 这个 Demo 不涉及复杂鉴权，先放开跨域，便于本地调试。
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -50,13 +42,44 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 把 outputs 目录挂成静态资源目录，这样浏览器可以直接访问导出的 json / txt / png。
 app.mount("/outputs", StaticFiles(directory=str(OUTPUTS_DIR)), name="outputs")
+
+
+def _count_low_confidence_words(ocr_result: dict, threshold: float) -> int:
+    return sum(
+        1
+        for page in ocr_result["pages"]
+        for word in page["words"]
+        if word["confidence"] >= 0 and word["confidence"] < threshold
+    )
+
+
+def _write_job_manifest(job: JobSkeleton, ocr_result: dict, analysis_url: str) -> None:
+    manifest = {
+        "job_id": job.job_id,
+        "source_file": ocr_result["source_file"],
+        "source_kind": ocr_result["source_kind"],
+        "created_at": ocr_result["created_at"],
+        "page_count": ocr_result["page_count"],
+        "config": ocr_result["config"],
+        "artifacts": {
+            "ocr_json": job.output_url(job.ocr_json_path),
+            "full_text": job.output_url(job.full_text_path),
+            "analysis_page": analysis_url,
+            "pages_dir": job.output_url(job.pages_dir),
+            "overlays_dir": job.output_url(job.overlays_dir),
+            "texts_dir": job.output_url(job.texts_dir),
+            "markdown_dir": job.output_url(job.markdown_dir),
+        },
+    }
+    job.manifest_path.write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
 
 
 @app.get("/")
 def index() -> FileResponse:
-    """返回上传页面。"""
     index_file = WEB_DIR / "index.html"
     if not index_file.exists():
         raise HTTPException(status_code=500, detail="缺少 web/index.html 文件。")
@@ -64,55 +87,62 @@ def index() -> FileResponse:
 
 
 @app.post("/ocr")
-def upload_pdf(
+def upload_document(
     file: UploadFile = File(...),
     ocr_lang: str = Form(os.getenv("OCR_LANG", "eng")),
     dpi: int = Form(int(os.getenv("OCR_DPI", "200"))),
     tesseract_config: str = Form(os.getenv("TESSERACT_CONFIG", DEFAULT_TESSERACT_CONFIG)),
 ):
-    """上传 PDF 并运行 OCR。
-
-    这里使用同步 def，而不是 async def，主要是因为 OCR 和 PDF 渲染都是 CPU 密集型任务，
-    用同步写法更直观，也方便直接用 UploadFile.file 做文件流复制。
-    """
     if not file.filename:
         raise HTTPException(status_code=400, detail="未检测到文件名。")
 
-    # 这里既检查文件后缀，也兼容某些浏览器没有正确设置 content-type 的情况。
-    is_pdf_name = file.filename.lower().endswith(".pdf")
-    is_pdf_type = file.content_type in {"application/pdf", "application/octet-stream", None}
-    if not (is_pdf_name and is_pdf_type):
-        raise HTTPException(status_code=400, detail="只支持上传 PDF 文件。")
+    try:
+        source_kind = detect_upload_kind(file.filename, file.content_type)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    job_id = uuid4().hex[:12]
-    job_upload_dir = UPLOADS_DIR / job_id
-    job_output_dir = OUTPUTS_DIR / job_id
-    job_upload_dir.mkdir(parents=True, exist_ok=True)
-    job_output_dir.mkdir(parents=True, exist_ok=True)
+    job = JobSkeleton.create(
+        uploads_root=UPLOADS_DIR,
+        outputs_root=OUTPUTS_DIR,
+        source_filename=file.filename,
+        source_kind=source_kind,
+    )
 
-    # 原始文件统一保存为 original.pdf，避免文件名里有空格、中文或特殊字符造成麻烦。
-    saved_pdf_path = job_upload_dir / "original.pdf"
-    with saved_pdf_path.open("wb") as f:
-        shutil.copyfileobj(file.file, f)
+    with job.source_path.open("wb") as saved_file:
+        shutil.copyfileobj(file.file, saved_file)
 
     try:
         result = run_ocr_pipeline(
-            pdf_path=saved_pdf_path,
-            output_dir=job_output_dir,
+            source_path=job.source_path,
+            output_dir=job.output_dir,
+            source_kind=source_kind,
             lang=ocr_lang,
             dpi=dpi,
             tesseract_config=tesseract_config,
         )
-    except Exception as exc:  # noqa: BLE001 - Demo 里统一转成 HTTP 错误更实用
+    except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"OCR 处理失败：{exc}") from exc
     finally:
         file.file.close()
 
     ocr_result = result["ocr_result"]
+    analysis_url = job.output_url(job.analysis_index_path)
+    build_error_analysis_page(
+        output_path=job.analysis_index_path,
+        job_id=job.job_id,
+        source_file=ocr_result["source_file"],
+        default_threshold=DEFAULT_LOW_CONFIDENCE_THRESHOLD,
+    )
+    _write_job_manifest(job, ocr_result, analysis_url)
 
     page_previews = []
     for page in ocr_result["pages"]:
         page_num = page["page_num"]
+        low_confidence_word_count = sum(
+            1
+            for word in page["words"]
+            if word["confidence"] >= 0 and word["confidence"] < DEFAULT_LOW_CONFIDENCE_THRESHOLD
+        )
         words_payload = [
             {
                 "text": word["text"],
@@ -128,27 +158,48 @@ def upload_pdf(
         page_previews.append(
             {
                 "page_num": page_num,
-                "image_url": f"/outputs/{job_id}/pages/{page['image_path']}",
-                "overlay_url": f"/outputs/{job_id}/overlays/{page['overlay_path']}",
-                "text_url": f"/outputs/{job_id}/texts/{page['text_path']}",
+                "image_url": job.output_url(Path("pages") / page["image_path"]),
+                "overlay_url": job.output_url(Path("overlays") / page["overlay_path"]),
+                "text_url": job.output_url(Path("texts") / page["text_path"]),
+                "markdown_url": job.output_url(Path("markdown") / page["markdown_path"]),
                 "word_count": len(page["words"]),
                 "line_count": len(page["lines"]),
+                "low_confidence_word_count": low_confidence_word_count,
                 "image_width": page["image_width"],
                 "image_height": page["image_height"],
+                "text": page["text"],
                 "words": words_payload,
             }
         )
 
-    # 返回结果链接，而不是直接把完整 OCR JSON 塞进响应体，避免响应过大。
+    low_confidence_word_count = _count_low_confidence_words(
+        ocr_result,
+        DEFAULT_LOW_CONFIDENCE_THRESHOLD,
+    )
+
     return {
         "message": "OCR 完成。",
-        "job_id": job_id,
+        "job_id": job.job_id,
         "source_file": ocr_result["source_file"],
+        "source_kind": ocr_result["source_kind"],
         "page_count": ocr_result["page_count"],
         "config": ocr_result["config"],
+        "analysis": {
+            "default_low_confidence_threshold": DEFAULT_LOW_CONFIDENCE_THRESHOLD,
+            "low_confidence_word_count": low_confidence_word_count,
+            "analysis_page": analysis_url,
+        },
         "downloads": {
-            "ocr_json": f"/outputs/{job_id}/ocr.json",
-            "full_text": f"/outputs/{job_id}/full_text.txt",
+            "ocr_json": job.output_url(job.ocr_json_path),
+            "full_text": job.output_url(job.full_text_path),
+            "analysis_page": analysis_url,
+            "job_manifest": job.output_url(job.manifest_path),
+        },
+        "artifacts": {
+            "pages_dir": job.output_url(job.pages_dir),
+            "overlays_dir": job.output_url(job.overlays_dir),
+            "texts_dir": job.output_url(job.texts_dir),
+            "markdown_dir": job.output_url(job.markdown_dir),
         },
         "page_previews": page_previews,
     }
@@ -156,5 +207,4 @@ def upload_pdf(
 
 @app.get("/health")
 def health_check() -> dict[str, str]:
-    """简单健康检查接口。"""
     return {"status": "ok"}

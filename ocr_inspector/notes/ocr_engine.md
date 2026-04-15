@@ -662,6 +662,341 @@ def resample_image(source_pixels, src_width, src_height,
   更平滑，保留更多细节
 ```
 
+### PyMuPDF.Pixmap 对象
+1. Pixmap 的本质
+pix 是一个 PyMuPDF.Pixmap 对象,它是 MuPDF 渲染引擎的核心数据结构,代表一张光栅图像(raster image),也就是我们常说的位图。
+```python
+pix = page.get_pixmap(matrix=matrix, alpha=False)
+# pix 的类型: <class 'fitz.fitz.Pixmap'>
+```
+2. C 语言底层结构: fz_pixmap
+在 MuPDF 的 C 源码中,Pixmap 对应的是 fz_pixmap 结构体:
+```python
+// MuPDF C 源码中的 fz_pixmap 结构(简化版)
+typedef struct fz_pixmap_s {
+    fz_storable storable;      // 引用计数管理
+    int x, y;                  // 图像原点坐标(左上角)
+    int w, h;                  // 宽度和高度(像素)
+    int n;                     // 每个像素的字节数(components + alpha)
+    int alpha;                 // 是否包含透明通道(0或1)
+    int stride;                // 每行的字节数(stride = w * n)
+    fz_colorspace *colorspace; // 颜色空间(RGB, CMYK, Gray等)
+    unsigned char *samples;    // ★ 核心:指向像素数据的指针
+} fz_pixmap;
+```
+
+3. 内存布局详解
+让我用图示展示 samples 的内存布局:
+```text
+假设: RGB 图像, width=4, height=3, alpha=False
+那么: n=3 (R,G,B 三个通道), stride=12 (4像素×3字节)
+
+内存布局(samples 指向的区域):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+行0: | R0 G0 B0 | R1 G1 B1 | R2 G2 B2 | R3 G3 B3 |  ← 12字节
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+行1: | R4 G4 B4 | R5 G5 B5 | R6 G6 B6 | R7 G7 B7 |  ← 12字节
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+行2: | R8 G8 B8 | R9 G9 B9 | R10 G10 B10 | R11 G11 B11 | ← 12字节
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+总大小 = height × stride = 3 × 12 = 36 字节
+```
+
+关键参数关系:
+```text
+pix.width   # 4 (像素)
+pix.height  # 3 (像素)
+pix.n       # 3 (每像素3字节: R+G+B)
+pix.stride  # 12 (每行12字节: 4像素 × 3字节)
+pix.alpha   # False (无透明通道)
+
+验证公式:
+pix.stride == pix.width * pix.n  # True: 12 == 4 * 3
+len(pix.samples) == pix.height * pix.stride  # True: 36 == 3 * 12
+```
+
+4. Python 层的属性映射
+```python
+# PyMuPDF 将 C 结构封装为 Python 对象
+pix.width        → C: pix->w
+pix.height       → C: pix->h
+pix.n            → C: pix->n
+pix.stride       → C: pix->stride
+pix.alpha        → C: pix->alpha
+pix.colorspace   → C: pix->colorspace
+pix.samples      → C: 从 pix->samples 复制出的 bytes 对象
+pix.samples_mv   → C: 直接指向 pix->samples 的 memoryview(零拷贝)
+pix.samples_ptr  → C: pix->samples 的内存地址(int 类型)
+```
+
+### get_pixmap() 的内部工作流程
+当你调用 page.get_pixmap(matrix=matrix) 时,发生了以下过程:
+```python
+# Python 层
+pix = page.get_pixmap(matrix=matrix, alpha=False)
+```
+
+步骤 1: 创建空白 Pixmap
+```C
+// C 层伪代码
+fz_context *ctx = ...;  // MuPDF 上下文
+fz_irect bbox;          // 计算渲染区域
+
+// 根据 matrix 变换后的页面边界,计算输出图像尺寸
+bbox = fz_round_rect(fz_transform_rect(fz_bound_page(page), matrix));
+
+// 分配 Pixmap 结构体并初始化
+fz_pixmap *pix = fz_new_pixmap_with_bbox(
+    ctx,
+    fz_device_rgb(ctx),  // 颜色空间: RGB
+    bbox,                // 图像尺寸
+    NULL,                // 无 alpha 通道
+    1                    // 清空为白色背景
+);
+
+// 此时 pix->samples 已分配内存,大小为: height * stride 字节
+```
+
+步骤 2: 创建绘图设备
+```C
+// 创建一个"绘图设备",它会将 PDF 绘制指令转换为像素操作
+fz_device *dev = fz_new_draw_device(ctx, matrix, pix);
+```
+这个 dev 设备知道:
+    如何解析 PDF 的矢量图形指令(线条、曲线、文字)
+    如何将它们光栅化到 pix->samples 内存区域
+    如何应用 matrix 进行坐标变换
+
+步骤 3: 执行渲染
+```C
+fz_close_device(ctx, dev);  // 关闭设备,刷新缓冲区
+fz_drop_device(ctx, dev);   // 释放设备资源
+
+// 将 C 的 fz_pixmap* 包装为 Python 的 Pixmap 对象
+return wrap_pixmap_as_python_object(pix);
+```
+
+### pix.save() 的源码级别设计
+1. Python 层调用
+```python
+pix.save("page_001.png")
+```
+
+2. 内部实现流程
+```python
+# PyMuPDF 的 save 方法(简化伪代码)
+def save(self, filename: str, format: str = None, **options):
+    """
+    将 Pixmap 保存为图像文件
+    
+    支持的格式: PNG, JPEG, PBM, PGM, PPM, PAM, PSD, TIFF 等
+    """
+    # 步骤 1: 根据文件扩展名确定格式
+    if format is None:
+        format = detect_format_from_extension(filename)
+        # "page_001.png" → "PNG"
+    
+    # 步骤 2: 调用对应的编码器
+    if format.upper() == "PNG":
+        self._save_png(filename, **options)
+    elif format.upper() == "JPEG":
+        self._save_jpeg(filename, **options)
+    # ... 其他格式
+```
+
+3. PNG 保存的详细过程
+```C
+// C 层: _save_png 的实现(基于 libpng)
+void pixmap_save_png(fz_context *ctx, fz_pixmap *pix, const char *filename) {
+    png_structp png_ptr = NULL;
+    png_infop info_ptr = NULL;
+    FILE *fp = NULL;
+    
+    // 步骤 1: 打开文件
+    fp = fopen(filename, "wb");
+    
+    // 步骤 2: 初始化 libpng 结构
+    png_ptr = png_create_write_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
+    info_ptr = png_create_info_struct(png_ptr);
+    
+    // 步骤 3: 设置错误处理
+    if (setjmp(png_jmpbuf(png_ptr))) {
+        // 发生错误,清理资源
+        png_destroy_write_struct(&png_ptr, &info_ptr);
+        fclose(fp);
+        return;
+    }
+    
+    // 步骤 4: 关联文件流
+    png_init_io(png_ptr, fp);
+    
+    // 步骤 5: 设置 PNG 头信息
+    png_set_IHDR(
+        png_ptr,
+        info_ptr,
+        pix->w,                        // 宽度
+        pix->h,                        // 高度
+        8,                             // 位深度: 8-bit per channel
+        pix->alpha ? PNG_COLOR_TYPE_RGBA : PNG_COLOR_TYPE_RGB,  // 颜色类型
+        PNG_INTERLACE_NONE,            // 无隔行扫描
+        PNG_COMPRESSION_TYPE_DEFAULT,  // 默认压缩
+        PNG_FILTER_TYPE_DEFAULT        // 默认滤波
+    );
+    
+    // 步骤 6: 写入头信息
+    png_write_info(png_ptr, info_ptr);
+    
+    // 步骤 7: 逐行写入像素数据
+    for (int y = 0; y < pix->h; y++) {
+        // 计算当前行的起始位置
+        unsigned char *row = pix->samples + y * pix->stride;
+        
+        // 写入一行数据
+        png_write_row(png_ptr, row);
+    }
+    
+    // 步骤 8: 结束写入
+    png_write_end(png_ptr, NULL);
+    
+    // 步骤 9: 清理资源
+    png_destroy_write_struct(&png_ptr, &info_ptr);
+    fclose(fp);
+} 
+```
+
+4. JPEG 保存的过程
+```C
+// C 层: _save_jpeg 的实现(基于 libjpeg)
+void pixmap_save_jpeg(fz_context *ctx, fz_pixmap *pix, const char *filename, int quality) {
+    struct jpeg_compress_struct cinfo;
+    struct jpeg_error_mgr jerr;
+    FILE *fp = NULL;
+    
+    // 步骤 1: 初始化 JPEG 压缩器
+    cinfo.err = jpeg_std_error(&jerr);
+    jpeg_create_compress(&cinfo);
+    
+    // 步骤 2: 打开文件
+    fp = fopen(filename, "wb");
+    jpeg_stdio_dest(&cinfo, fp);
+    
+    // 步骤 3: 设置压缩参数
+    cinfo.image_width = pix->w;
+    cinfo.image_height = pix->h;
+    cinfo.input_components = pix->n - pix->alpha;  // RGB=3, 不含 alpha
+    cinfo.in_color_space = JCS_RGB;
+    
+    jpeg_set_defaults(&cinfo);
+    jpeg_set_quality(&cinfo, quality, TRUE);  // quality: 0-100
+    
+    // 步骤 4: 开始压缩
+    jpeg_start_compress(&cinfo, TRUE);
+    
+    // 步骤 5: 逐行写入(需要去除 alpha 通道)
+    JSAMPROW row_pointer[1];
+    unsigned char *temp_row = NULL;
+    
+    if (pix->alpha) {
+        // 如果有 alpha,需要创建临时缓冲区去除 alpha
+        temp_row = malloc(pix->w * 3);
+    }
+    
+    while (cinfo.next_scanline < cinfo.image_height) {
+        unsigned char *src = pix->samples + cinfo.next_scanline * pix->stride;
+        
+        if (pix->alpha) {
+            // RGBA → RGB 转换
+            for (int x = 0; x < pix->w; x++) {
+                temp_row[x*3 + 0] = src[x*4 + 0];  // R
+                temp_row[x*3 + 1] = src[x*4 + 1];  // G
+                temp_row[x*3 + 2] = src[x*4 + 2];  // B
+                // 跳过 Alpha
+            }
+            row_pointer[0] = temp_row;
+        } else {
+            row_pointer[0] = src;
+        }
+        
+        jpeg_write_scanlines(&cinfo, row_pointer, 1);
+    }
+    
+    // 步骤 6: 完成压缩
+    jpeg_finish_compress(&cinfo);
+    
+    // 步骤 7: 清理
+    if (temp_row) free(temp_row);
+    fclose(fp);
+    jpeg_destroy_compress(&cinfo);
+}
+```
+
+完整的数据流向图
+```text
+┌─────────────────────────────────────────────────────────────┐
+│ 1. PDF 文件                                                  │
+│    - 矢量图形(文字、路径、图片)                                 │
+│    - 坐标系: 点(point), 72 points = 1 inch                   │
+└──────────────────┬──────────────────────────────────────────┘
+                   │ page.get_pixmap(matrix=Matrix(2.78, 2.78))
+                   ▼
+┌─────────────────────────────────────────────────────────────┐
+│ 2. MuPDF 渲染引擎 (C 层)                                     │
+│                                                             │
+│   a. 计算输出尺寸:                                           │
+│      output_width = pdf_width × 2.78                        │
+│      output_height = pdf_height × 2.78                      │
+│                                                             │
+│   b. 分配 fz_pixmap 结构:                                    │
+│      ┌──────────────────────────┐                           │
+│      │ width: 1700              │                           │
+│      │ height: 2200             │                           │
+│      │ n: 3 (RGB)               │                           │
+│      │ stride: 5100             │                           │
+│      │ samples: [malloc内存]    │ ◄── 11.22 MB              │
+│      └──────────────────────────┘                           │
+│                                                             │
+│   c. 光栅化渲染:                                             │
+│      for each PDF element:                                  │
+│          应用 matrix 变换坐标                                │
+│          扫描线填充 → 写入 samples                           │
+└──────────────────┬──────────────────────────────────────────┘
+                   │ 返回 Pixmap 对象
+                   ▼
+┌─────────────────────────────────────────────────────────────┐
+│ 3. Python Pixmap 对象                                        │
+│                                                             │
+│   pix.width    = 1700                                       │
+│   pix.height   = 2200                                       │
+│   pix.n        = 3                                          │
+│   pix.stride   = 5100                                       │
+│   pix.samples  = bytes(11220000)  ← 从 C 内存复制           │
+│   pix.samples_mv = memoryview     ← 零拷贝视图              │
+│   pix.samples_ptr = 0x7fff...     ← C 指针地址              │
+└──────────────────┬──────────────────────────────────────────┘
+                   │ pix.save("page_001.png")
+                   ▼
+┌─────────────────────────────────────────────────────────────┐
+│ 4. 图像编码 (libpng)                                         │
+│                                                             │
+│   a. 创建 PNG 结构                                           │
+│   b. 设置 IHDR: 1700×2200, 8-bit, RGB                       │
+│   c. 逐行读取 pix->samples:                                  │
+│      for y in range(height):                                │
+│          row = samples[y * stride : (y+1) * stride]         │
+│          png_write_row(row)  ← Deflate 压缩                 │
+│   d. 写入 IDAT 数据块                                        │
+│   e. 写入 IEND 结束标记                                      │
+└──────────────────┬──────────────────────────────────────────┘
+                   │
+                   ▼
+┌─────────────────────────────────────────────────────────────┐
+│ 5. PNG 文件 (page_001.png)                                   │
+│    - 文件大小: ~2-5 MB (经过压缩)                             │
+│    - 可直接被 PIL/Tesseract 读取                              │
+└─────────────────────────────────────────────────────────────┘
+```
+
 ## 遇到的问题
 ### Word 文档是矢量的吗？
 Word 的本质：混合格式
@@ -1243,3 +1578,110 @@ if ocr_result["confidence"] < 0.7:
 ```
 项目定位：OCR Inspector，名字就说明了一切——它是为 OCR 场景设计的！
 
+
+## zoom = dpi / 72.0，Matrix函数
+### 为什么要除以 72
+1. PDF 的坐标系标准
+PDF 文件内部使用的是**点(point)**作为坐标单位,而不是像素(pixel)。这是一个行业标准:
+    1 点(point) = 1/72 英寸
+    PDF 的原生单位是"点(point)
+例如:
+    A4 纸张尺寸:595 × 842 点(约 8.27 × 11.69 英寸)
+    Letter 纸张尺寸:612 × 792 点(8.5 × 11 英寸)
+
+2. 从点到像素的转换过程
+```python
+zoom = dpi / 72.0  # 计算缩放因子
+matrix = pymupdf.Matrix(zoom, zoom)
+```
+数据流向:
+    输入: 你想要 200 DPI 的输出图片
+    计算: zoom = 200 / 72.0 ≈ 2.778
+
+数学原理:
+```text
+目标像素数 = 点数 × (目标DPI / 72)
+          = 点数 × 缩放因子
+```
+
+举例说明:
+```text
+假设 PDF 页面宽 612 点(Letter 纸):
+- 如果用 72 DPI:  zoom = 72/72 = 1.0  → 输出 612 像素
+- 如果用 200 DPI: zoom = 200/72 ≈ 2.78 → 输出 1700 像素
+- 如果用 300 DPI: zoom = 300/72 ≈ 4.17 → 输出 2550 像素
+```
+
+### Matrix 的源码级别理解
+1. Matrix 的本质:仿射变换矩阵
+PyMuPDF 的 Matrix 是一个 3×3 仿射变换矩阵,用于坐标系统之间的转换:
+```text
+| a  b  e |
+| c  d  f |
+| 0  0  1 |
+```
+
+在代码中创建时:
+```python
+matrix = pymupdf.Matrix(zoom, zoom)
+# 等价于:
+matrix = pymupdf.Matrix(a=zoom, b=0, c=0, d=zoom, e=0, f=0)
+```
+
+完整形式:
+```text
+| zoom  0    0  |
+| 0     zoom 0  |
+| 0     0    1  |
+```
+
+2. 六个参数的含义
+```python
+pymupdf.Matrix(a, b, c, d, e, f)
+```
+a: X 轴缩放(水平)
+b: Y 轴倾斜(垂直剪切)
+c: X 轴倾斜(水平剪切)
+d: Y 轴缩放(垂直)
+e: X 轴平移(水平移动)
+f: Y 轴平移(垂直移动)
+
+3. 工作原理:坐标变换
+
+当你调用 page.get_pixmap(matrix=matrix) 时,PyMuPDF 执行以下操作:
+```python
+# 伪代码展示内部流程
+for each_point_in_pdf(x_pdf, y_pdf):
+    # 应用矩阵变换
+    x_pixel = a * x_pdf + b * y_pdf + e
+    y_pixel = c * x_pdf + d * y_pdf + f
+    
+    # 渲染到像素图的对应位置
+    pixmap.set_pixel(x_pixel, y_pixel, color)
+```
+
+实际例子:
+```python
+# PDF 中的一个点 (100, 200)
+# 使用 Matrix(2.78, 2.78) 变换
+x_pixel = 2.78 * 100 + 0 * 200 + 0 = 278
+y_pixel = 0 * 100 + 2.78 * 200 + 0 = 556
+
+# 结果:PDF 的点 (100, 200) → 像素图的点 (278, 556)
+```
+
+4. Matrix 的强大功能
+除了缩放,Matrix 还可以做
+```python
+# 1. 旋转 90 度
+rotate_90 = pymupdf.Matrix(0, 1, -1, 0, 0, 0)
+
+# 2. 平移 100 单位
+translate = pymupdf.Matrix(1, 0, 0, 1, 100, 100)
+
+# 3. 组合变换:先放大 2 倍,再平移 100
+combined = pymupdf.Matrix(2, 0, 0, 2, 100, 100)
+
+# 4. 非等比缩放(拉伸)
+stretch = pymupdf.Matrix(2, 0, 0, 1, 0, 0)  # X 轴放大 2 倍,Y 轴不变
+```
