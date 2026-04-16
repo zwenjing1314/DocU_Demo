@@ -18,7 +18,13 @@ from job_skeleton import (
     JobSkeleton,
     detect_upload_kind,
 )
-from ocr_engine import DEFAULT_TESSERACT_CONFIG, run_ocr_pipeline
+from ocr_engine import (
+    DEFAULT_ENABLE_ROTATED_TEXT,
+    DEFAULT_OCR_PADDING,
+    DEFAULT_PREPROCESS_MODE,
+    DEFAULT_TESSERACT_CONFIG,
+    run_ocr_pipeline,
+)
 
 BASE_DIR = Path(__file__).resolve().parent
 UPLOADS_DIR = BASE_DIR / "uploads"
@@ -43,6 +49,13 @@ app.add_middleware(
 )
 
 app.mount("/outputs", StaticFiles(directory=str(OUTPUTS_DIR)), name="outputs")
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _count_low_confidence_words(ocr_result: dict, threshold: float) -> int:
@@ -90,8 +103,13 @@ def index() -> FileResponse:
 def upload_document(
     file: UploadFile = File(...),
     ocr_lang: str = Form(os.getenv("OCR_LANG", "eng")),
-    dpi: int = Form(int(os.getenv("OCR_DPI", "200"))),
+    dpi: int = Form(int(os.getenv("OCR_DPI", "300"))),
     tesseract_config: str = Form(os.getenv("TESSERACT_CONFIG", DEFAULT_TESSERACT_CONFIG)),
+    preprocess_mode: str = Form(os.getenv("OCR_PREPROCESS_MODE", DEFAULT_PREPROCESS_MODE)),
+    ocr_padding: int = Form(int(os.getenv("OCR_PADDING", str(DEFAULT_OCR_PADDING)))),
+    enable_sparse_fallback: bool = Form(_env_bool("OCR_SPARSE_FALLBACK", True)),
+    enable_rotated_text: bool = Form(_env_bool("OCR_ROTATED_TEXT", DEFAULT_ENABLE_ROTATED_TEXT)),
+    suppress_graphic_artifacts: bool = Form(_env_bool("OCR_SUPPRESS_GRAPHIC_ARTIFACTS", True)),
 ):
     if not file.filename:
         raise HTTPException(status_code=400, detail="未检测到文件名。")
@@ -119,6 +137,11 @@ def upload_document(
             lang=ocr_lang,
             dpi=dpi,
             tesseract_config=tesseract_config,
+            preprocess_mode=preprocess_mode,
+            ocr_padding=ocr_padding,
+            enable_sparse_fallback=enable_sparse_fallback,
+            enable_rotated_text=enable_rotated_text,
+            suppress_graphic_artifacts=suppress_graphic_artifacts,
         )
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"OCR 处理失败：{exc}") from exc
@@ -150,6 +173,8 @@ def upload_document(
                 "block_num": word["block_num"],
                 "line_num": word["line_num"],
                 "word_num": word["word_num"],
+                "source": word.get("source", "primary"),
+                "angle": word.get("angle", 0),
                 "bbox": word["bbox"],
             }
             for word in page["words"]
@@ -164,11 +189,13 @@ def upload_document(
                 "markdown_url": job.output_url(Path("markdown") / page["markdown_path"]),
                 "word_count": len(page["words"]),
                 "line_count": len(page["lines"]),
+                "rejected_word_count": len(page.get("rejected_words", [])),
                 "low_confidence_word_count": low_confidence_word_count,
                 "image_width": page["image_width"],
                 "image_height": page["image_height"],
                 "text": page["text"],
                 "words": words_payload,
+                "diagnostics": page.get("diagnostics", {}),
             }
         )
 
@@ -187,6 +214,10 @@ def upload_document(
         "analysis": {
             "default_low_confidence_threshold": DEFAULT_LOW_CONFIDENCE_THRESHOLD,
             "low_confidence_word_count": low_confidence_word_count,
+            "rejected_word_count": sum(
+                len(page.get("rejected_words", []))
+                for page in ocr_result["pages"]
+            ),
             "analysis_page": analysis_url,
         },
         "downloads": {

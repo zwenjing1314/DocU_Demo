@@ -76,7 +76,8 @@
     }
     input[type="text"],
     input[type="number"],
-    input[type="file"] {
+    input[type="file"],
+    select {
       width: 100%;
       padding: 11px 12px;
       border-radius: 12px;
@@ -268,13 +269,51 @@
         </div>
         <div>
           <label for="dpi">DPI</label>
-          <input id="dpi" name="dpi" type="number" value="200" min="72" max="600" />
+          <input id="dpi" name="dpi" type="number" value="300" min="72" max="600" />
         </div>
         <div>
           <label for="tesseract_config">Tesseract 配置</label>
-          <input id="tesseract_config" name="tesseract_config" type="text" value="--oem 3 --psm 3" />
+          <input id="tesseract_config" name="tesseract_config" type="text" value="--oem 3 --psm 3 -c preserve_interword_spaces=1" />
         </div>
       </div>
+
+      <div class="row" style="margin-top: 14px;">
+        <div>
+          <label for="preprocess_mode">图像预处理</label>
+          <select id="preprocess_mode" name="preprocess_mode">
+            <option value="clean" selected>clean：灰度增强</option>
+            <option value="binary">binary：二值化</option>
+            <option value="none">none：不处理</option>
+          </select>
+        </div>
+        <div>
+          <label for="ocr_padding">边缘补白（px）</label>
+          <input id="ocr_padding" name="ocr_padding" type="number" value="24" min="0" max="120" />
+        </div>
+        <div>
+          <label for="enable_sparse_fallback">稀疏文本补扫</label>
+          <select id="enable_sparse_fallback" name="enable_sparse_fallback">
+            <option value="true" selected>开启</option>
+            <option value="false">关闭</option>
+          </select>
+        </div>
+        <div>
+          <label for="enable_rotated_text">45° 倾斜补扫</label>
+          <select id="enable_rotated_text" name="enable_rotated_text">
+            <option value="false" selected>关闭</option>
+            <option value="true">开启</option>
+          </select>
+        </div>
+        <div>
+          <label for="suppress_graphic_artifacts">图形误识别过滤</label>
+          <select id="suppress_graphic_artifacts" name="suppress_graphic_artifacts">
+            <option value="true" selected>开启</option>
+            <option value="false">关闭</option>
+          </select>
+        </div>
+      </div>
+
+      <p class="muted" style="margin-top: 10px;">复杂图表页建议保持增强、稀疏补扫和图形过滤开启；只有页面确实有 45° 倾斜文字时，再开启倾斜补扫。</p>
 
       <div style="margin-top: 16px;">
         <button type="submit">开始 OCR</button>
@@ -352,7 +391,7 @@
       const chips = words.slice(0, MAX_WORD_CHIPS).map((word) => `
         <span
           class="word-chip ${chipClass}"
-          title="Line ${word.line_num ?? '-'} · Confidence ${formatConfidence(word.confidence)}"
+          title="Line ${word.line_num ?? '-'} · Confidence ${formatConfidence(word.confidence)} · Source ${word.source ?? 'primary'} · Angle ${word.angle ?? 0}"
         >
           ${escapeHtml(word.text)}
           <span class="word-chip__conf">${formatConfidence(word.confidence)}</span>
@@ -388,6 +427,10 @@
           <article class="stat warn">
             <div class="muted">低置信度词</div>
             <strong>${data.analysis.low_confidence_word_count}</strong>
+          </article>
+          <article class="stat">
+            <div class="muted">过滤图形疑似词</div>
+            <strong>${data.analysis.rejected_word_count ?? 0}</strong>
           </article>
         </div>
       `;
@@ -458,7 +501,7 @@
             <div class="page-head">
               <div>
                 <h3>Page ${page.page_num}</h3>
-                <p class="muted">尺寸 ${page.image_width} × ${page.image_height}，共 ${page.word_count} 个词，${page.line_count} 行。</p>
+                <p class="muted">尺寸 ${page.image_width} × ${page.image_height}，共 ${page.word_count} 个词，${page.line_count} 行，过滤 ${page.rejected_word_count ?? 0} 个图形疑似词。</p>
               </div>
               <div class="tag">低置信度 ${lowConfidenceWords.length}</div>
             </div>

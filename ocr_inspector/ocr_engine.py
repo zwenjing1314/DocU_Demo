@@ -10,13 +10,15 @@ from __future__ import annotations
 5. 导出 ocr.json、纯文本和按页 Markdown。
 """
 
-from collections import defaultdict
+from collections import Counter, defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 import json
+import math
+import shlex
 
-from PIL import Image, ImageDraw, ImageOps
+from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageOps
 import pymupdf
 import pytesseract
 from pytesseract import Output
@@ -24,10 +26,19 @@ from pytesseract import Output
 # 默认 OCR 配置：
 # --oem 3: 使用默认 OCR 引擎模式
 # --psm 3: 自动页面分割，适合大多数整页文档
-DEFAULT_TESSERACT_CONFIG = "--oem 3 --psm 3"
+DEFAULT_TESSERACT_CONFIG = "--oem 3 --psm 3 -c preserve_interword_spaces=1"
+DEFAULT_PREPROCESS_MODE = "clean"
+DEFAULT_OCR_PADDING = 24
+DEFAULT_ENABLE_ROTATED_TEXT = False
+DEFAULT_SUPPLEMENTAL_MIN_CONFIDENCE = 45.0
+DEFAULT_ROTATED_MIN_CONFIDENCE = 70.0
+ROTATED_TEXT_ANGLES = (45, -45)
+SUPPORTED_PREPROCESS_MODES = {"none", "clean", "binary"}
+_CIRCLE_LIKE_TEXT = {"o", "O", "0", "○", "◯", "●", "◦"}
+_LINE_ARTIFACT_CHARS = set("|_-=—–")
 
 
-def render_pdf_to_images(pdf_path: Path, images_dir: Path, dpi: int = 200) -> list[Path]:
+def render_pdf_to_images(pdf_path: Path, images_dir: Path, dpi: int = 300) -> list[Path]:
     """将 PDF 的每一页渲染成 PNG 图片。"""
     images_dir.mkdir(parents=True, exist_ok=True)
 
@@ -64,7 +75,7 @@ def prepare_page_images(
     source_path: Path,
     images_dir: Path,
     source_kind: str,
-    dpi: int = 200,
+    dpi: int = 300,
 ) -> list[Path]:
     """根据源文件类型准备统一的页图列表。"""
     if source_kind == "pdf":
@@ -72,6 +83,96 @@ def prepare_page_images(
     if source_kind == "image":
         return render_image_to_page(source_path, images_dir=images_dir)
     raise ValueError(f"不支持的 source_kind: {source_kind}")
+
+
+def _normalize_preprocess_mode(preprocess_mode: str) -> str:
+    mode = (preprocess_mode or DEFAULT_PREPROCESS_MODE).strip().lower()
+    return mode if mode in SUPPORTED_PREPROCESS_MODES else DEFAULT_PREPROCESS_MODE
+
+
+def _otsu_threshold(image: Image.Image) -> int:
+    """用 Otsu 阈值给二值化模式自动选择分割点。"""
+    histogram = image.histogram()
+    total = sum(histogram)
+    if total <= 0:
+        return 180
+
+    total_sum = sum(value * count for value, count in enumerate(histogram))
+    background_sum = 0.0
+    background_weight = 0
+    best_threshold = 180
+    best_variance = -1.0
+
+    for value, count in enumerate(histogram):
+        background_weight += count
+        if background_weight == 0:
+            continue
+
+        foreground_weight = total - background_weight
+        if foreground_weight == 0:
+            break
+
+        background_sum += value * count
+        background_mean = background_sum / background_weight
+        foreground_mean = (total_sum - background_sum) / foreground_weight
+        between_variance = (
+            background_weight
+            * foreground_weight
+            * (background_mean - foreground_mean)
+            * (background_mean - foreground_mean)
+        )
+
+        if between_variance > best_variance:
+            best_variance = between_variance
+            best_threshold = value
+
+    return best_threshold
+
+
+def _preprocess_for_ocr(image: Image.Image, preprocess_mode: str) -> Image.Image:
+    """生成 OCR 专用图片，保持尺寸不变，保证 bbox 能映射回原页图。"""
+    mode = _normalize_preprocess_mode(preprocess_mode)
+    normalized = ImageOps.exif_transpose(image).convert("RGB")
+    if mode == "none":
+        return normalized
+
+    grayscale = ImageOps.grayscale(normalized)
+    grayscale = ImageOps.autocontrast(grayscale, cutoff=1)
+    grayscale = ImageEnhance.Contrast(grayscale).enhance(1.3)
+
+    if mode == "binary":
+        threshold = _otsu_threshold(grayscale)
+        return grayscale.point(lambda pixel: 255 if pixel > threshold else 0).convert("RGB")
+
+    return grayscale.filter(ImageFilter.SHARPEN).convert("RGB")
+
+
+def _expand_for_ocr(image: Image.Image, padding: int) -> Image.Image:
+    padding = max(0, int(padding))
+    if padding <= 0:
+        return image
+    return ImageOps.expand(image, border=padding, fill="white")
+
+
+def _config_with_psm(config: str, psm: int) -> str:
+    """替换 Tesseract 配置中的 PSM，避免追加多个互相冲突的 --psm。"""
+    tokens = shlex.split(config or "")
+    cleaned: list[str] = []
+    skip_next = False
+
+    for token in tokens:
+        if skip_next:
+            skip_next = False
+            continue
+        if token == "--psm":
+            skip_next = True
+            continue
+        if token.startswith("--psm="):
+            continue
+        cleaned.append(token)
+
+    cleaned.extend(["--psm", str(psm)])
+    return shlex.join(cleaned)
 
 
 def _safe_float(value: Any, default: float = -1.0) -> float:
@@ -82,7 +183,140 @@ def _safe_float(value: Any, default: float = -1.0) -> float:
         return default
 
 
-def _extract_words_from_tesseract_dict(data: dict[str, list[Any]], page_num: int) -> list[dict[str, Any]]:
+def _axis_bbox(
+    left: float,
+    top: float,
+    right: float,
+    bottom: float,
+    image_size: tuple[int, int],
+) -> dict[str, Any] | None:
+    image_width, image_height = image_size
+    clipped_left = max(0, min(image_width, int(round(left))))
+    clipped_top = max(0, min(image_height, int(round(top))))
+    clipped_right = max(0, min(image_width, int(round(right))))
+    clipped_bottom = max(0, min(image_height, int(round(bottom))))
+
+    if clipped_right <= clipped_left or clipped_bottom <= clipped_top:
+        return None
+
+    return {
+        "left": clipped_left,
+        "top": clipped_top,
+        "width": clipped_right - clipped_left,
+        "height": clipped_bottom - clipped_top,
+        "right": clipped_right,
+        "bottom": clipped_bottom,
+    }
+
+
+def _bbox_from_points(
+    points: list[tuple[float, float]],
+    image_size: tuple[int, int],
+) -> dict[str, Any] | None:
+    bbox = _axis_bbox(
+        min(point[0] for point in points),
+        min(point[1] for point in points),
+        max(point[0] for point in points),
+        max(point[1] for point in points),
+        image_size,
+    )
+    if not bbox:
+        return None
+
+    image_width, image_height = image_size
+    bbox["points"] = [
+        {
+            "x": max(0, min(image_width, int(round(x)))),
+            "y": max(0, min(image_height, int(round(y)))),
+        }
+        for x, y in points
+    ]
+    return bbox
+
+
+def _map_padded_bbox(
+    left: int,
+    top: int,
+    width: int,
+    height: int,
+    *,
+    padding: int,
+    image_size: tuple[int, int],
+) -> dict[str, Any] | None:
+    return _axis_bbox(
+        left - padding,
+        top - padding,
+        left + width - padding,
+        top + height - padding,
+        image_size,
+    )
+
+
+def _rotated_point_to_original(
+    x: float,
+    y: float,
+    *,
+    rotated_size: tuple[int, int],
+    original_size: tuple[int, int],
+    angle: float,
+) -> tuple[float, float]:
+    """把旋转后图片上的点反算回原图坐标。"""
+    rotated_width, rotated_height = rotated_size
+    original_width, original_height = original_size
+    theta = math.radians(angle)
+    cos_theta = math.cos(theta)
+    sin_theta = math.sin(theta)
+
+    dx = x - rotated_width / 2
+    dy = y - rotated_height / 2
+    original_x = cos_theta * dx - sin_theta * dy + original_width / 2
+    original_y = sin_theta * dx + cos_theta * dy + original_height / 2
+    return original_x, original_y
+
+
+def _map_rotated_bbox(
+    left: int,
+    top: int,
+    width: int,
+    height: int,
+    *,
+    padding: int,
+    rotated_size: tuple[int, int],
+    original_size: tuple[int, int],
+    angle: float,
+) -> dict[str, Any] | None:
+    unpadded_left = left - padding
+    unpadded_top = top - padding
+    unpadded_right = left + width - padding
+    unpadded_bottom = top + height - padding
+    rotated_points = [
+        (unpadded_left, unpadded_top),
+        (unpadded_right, unpadded_top),
+        (unpadded_right, unpadded_bottom),
+        (unpadded_left, unpadded_bottom),
+    ]
+    original_points = [
+        _rotated_point_to_original(
+            x,
+            y,
+            rotated_size=rotated_size,
+            original_size=original_size,
+            angle=angle,
+        )
+        for x, y in rotated_points
+    ]
+    return _bbox_from_points(original_points, original_size)
+
+
+def _extract_words_from_tesseract_dict(
+    data: dict[str, list[Any]],
+    page_num: int,
+    *,
+    bbox_mapper: Any,
+    source: str,
+    angle: float = 0.0,
+    min_confidence: float = -1.0,
+) -> list[dict[str, Any]]:
     """从 pytesseract.image_to_data 的字典结果中提取词级记录。"""
     words: list[dict[str, Any]] = []
     total_items = len(data.get("text", []))
@@ -97,24 +331,25 @@ def _extract_words_from_tesseract_dict(data: dict[str, list[Any]], page_num: int
         width = int(data["width"][i])
         height = int(data["height"][i])
         conf = _safe_float(data["conf"][i])
+        if min_confidence >= 0 and conf < min_confidence:
+            continue
+
+        bbox = bbox_mapper(left, top, width, height)
+        if not bbox:
+            continue
 
         words.append(
             {
                 "page_num": page_num,
                 "text": text,
                 "confidence": conf,
-                "bbox": {
-                    "left": left,
-                    "top": top,
-                    "width": width,
-                    "height": height,
-                    "right": left + width,
-                    "bottom": top + height,
-                },
+                "bbox": bbox,
                 "block_num": int(data["block_num"][i]),
                 "par_num": int(data["par_num"][i]),
                 "line_num": int(data["line_num"][i]),
                 "word_num": int(data["word_num"][i]),
+                "source": source,
+                "angle": angle,
             }
         )
 
@@ -123,9 +358,15 @@ def _extract_words_from_tesseract_dict(data: dict[str, list[Any]], page_num: int
 
 def _group_words_to_lines(words: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """把同一行的词聚合成 line 级结果。"""
-    groups: dict[tuple[int, int, int], list[dict[str, Any]]] = defaultdict(list)
+    groups: dict[tuple[str, float, int, int, int], list[dict[str, Any]]] = defaultdict(list)
     for word in words:
-        key = (word["block_num"], word["par_num"], word["line_num"])
+        key = (
+            word.get("source", "primary"),
+            float(word.get("angle", 0.0)),
+            word["block_num"],
+            word["par_num"],
+            word["line_num"],
+        )
         groups[key].append(word)
 
     lines: list[dict[str, Any]] = []
@@ -157,6 +398,8 @@ def _group_words_to_lines(words: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "block_num": items[0]["block_num"],
                 "par_num": items[0]["par_num"],
                 "line_num": items[0]["line_num"],
+                "source": items[0].get("source", "primary"),
+                "angle": items[0].get("angle", 0.0),
                 "words": [item["text"] for item in items],
             }
         )
@@ -185,13 +428,236 @@ def _draw_overlay(
 
     for word in words:
         box = word["bbox"]
+        outline = (220, 53, 69)
+        if word.get("angle"):
+            outline = (13, 110, 253)
+        elif word.get("source") != "primary":
+            outline = (25, 135, 84)
+
+        points = box.get("points")
+        if points:
+            polygon = [(point["x"], point["y"]) for point in points]
+            draw.line(polygon + [polygon[0]], fill=outline, width=2)
+            continue
+
         draw.rectangle(
             [(box["left"], box["top"]), (box["right"], box["bottom"])],
-            outline=(220, 53, 69),
+            outline=outline,
             width=1,
         )
 
     canvas.save(overlay_path)
+
+
+def _bbox_iou(first: dict[str, Any], second: dict[str, Any]) -> float:
+    left = max(first["left"], second["left"])
+    top = max(first["top"], second["top"])
+    right = min(first["right"], second["right"])
+    bottom = min(first["bottom"], second["bottom"])
+    if right <= left or bottom <= top:
+        return 0.0
+
+    intersection = (right - left) * (bottom - top)
+    first_area = first["width"] * first["height"]
+    second_area = second["width"] * second["height"]
+    union = first_area + second_area - intersection
+    return intersection / union if union > 0 else 0.0
+
+
+def _normalized_text_for_match(text: str) -> str:
+    stripped = text.strip().casefold()
+    alnum_only = "".join(character for character in stripped if character.isalnum())
+    return alnum_only or stripped
+
+
+def _merge_words(
+    base_words: list[dict[str, Any]],
+    supplemental_words: list[dict[str, Any]],
+    *,
+    iou_threshold: float,
+    replace_margin: float,
+) -> list[dict[str, Any]]:
+    """合并补扫结果，尽量只补漏，不让重复词抬高词数。"""
+    merged = list(base_words)
+
+    for candidate in supplemental_words:
+        candidate_text = _normalized_text_for_match(candidate["text"])
+        duplicate_index: int | None = None
+        duplicate_has_same_text = False
+
+        for index, existing in enumerate(merged):
+            iou = _bbox_iou(existing["bbox"], candidate["bbox"])
+            if iou < iou_threshold:
+                continue
+
+            existing_text = _normalized_text_for_match(existing["text"])
+            same_text = bool(candidate_text and existing_text) and (
+                candidate_text == existing_text
+                or candidate_text in existing_text
+                or existing_text in candidate_text
+            )
+            if same_text or iou >= 0.75:
+                duplicate_index = index
+                duplicate_has_same_text = same_text
+                break
+
+        if duplicate_index is None:
+            merged.append(candidate)
+            continue
+
+        existing = merged[duplicate_index]
+        candidate_confidence = candidate["confidence"]
+        existing_confidence = existing["confidence"]
+        if (
+            candidate_confidence >= 0
+            and candidate_confidence >= existing_confidence + replace_margin
+            and (duplicate_has_same_text or existing_confidence < 35)
+        ):
+            merged[duplicate_index] = candidate
+
+    return merged
+
+
+def _word_line_key(word: dict[str, Any]) -> tuple[str, float, int, int, int]:
+    return (
+        word.get("source", "primary"),
+        float(word.get("angle", 0.0)),
+        word["block_num"],
+        word["par_num"],
+        word["line_num"],
+    )
+
+
+def _artifact_reason(
+    word: dict[str, Any],
+    line_counts: Counter[tuple[str, float, int, int, int]],
+) -> str | None:
+    text = str(word["text"]).strip()
+    if not text:
+        return "empty_text"
+
+    box = word["bbox"]
+    width = max(1, int(box["width"]))
+    height = max(1, int(box["height"]))
+    aspect_ratio = width / height
+    confidence = float(word["confidence"])
+    is_isolated = line_counts[_word_line_key(word)] <= 1
+
+    if (
+        is_isolated
+        and text in _CIRCLE_LIKE_TEXT
+        and 0.6 <= aspect_ratio <= 1.7
+        and max(width, height) >= 8
+        and confidence < 80
+    ):
+        return "circle_like_graphic"
+
+    if (
+        set(text) <= _LINE_ARTIFACT_CHARS
+        and (aspect_ratio >= 5 or aspect_ratio <= 0.2)
+        and confidence < 75
+    ):
+        return "table_or_shape_line"
+
+    return None
+
+
+def _filter_graphic_artifacts(
+    words: list[dict[str, Any]],
+    *,
+    enabled: bool,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    if not enabled:
+        return words, []
+
+    line_counts = Counter(_word_line_key(word) for word in words)
+    kept_words: list[dict[str, Any]] = []
+    rejected_words: list[dict[str, Any]] = []
+
+    for word in words:
+        reason = _artifact_reason(word, line_counts)
+        if not reason:
+            kept_words.append(word)
+            continue
+
+        rejected_word = dict(word)
+        rejected_word["rejected_reason"] = reason
+        rejected_words.append(rejected_word)
+
+    return kept_words, rejected_words
+
+
+def _should_keep_rotated_word(word: dict[str, Any]) -> bool:
+    text = str(word["text"]).strip()
+    confidence = float(word["confidence"])
+    alnum_count = sum(1 for character in text if character.isalnum())
+    if alnum_count >= 2 and confidence >= DEFAULT_ROTATED_MIN_CONFIDENCE:
+        return True
+    if text in _CIRCLE_LIKE_TEXT:
+        return False
+    return bool(len(text) == 1 and text.isalnum() and confidence >= 85)
+
+
+def _run_tesseract_pass(
+    image: Image.Image,
+    *,
+    page_num: int,
+    lang: str,
+    config: str,
+    padding: int,
+    source: str,
+    original_size: tuple[int, int] | None = None,
+    angle: float = 0.0,
+    min_confidence: float = -1.0,
+) -> list[dict[str, Any]]:
+    padded_image = _expand_for_ocr(image, padding)
+    try:
+        data = pytesseract.image_to_data(
+            padded_image,
+            lang=lang,
+            config=config,
+            output_type=Output.DICT,
+        )
+    finally:
+        if padded_image is not image:
+            padded_image.close()
+
+    if angle:
+        if original_size is None:
+            raise ValueError("旋转 OCR pass 必须提供 original_size。")
+
+        def bbox_mapper(left: int, top: int, width: int, height: int) -> dict[str, Any] | None:
+            return _map_rotated_bbox(
+                left,
+                top,
+                width,
+                height,
+                padding=padding,
+                rotated_size=image.size,
+                original_size=original_size,
+                angle=angle,
+            )
+
+    else:
+
+        def bbox_mapper(left: int, top: int, width: int, height: int) -> dict[str, Any] | None:
+            return _map_padded_bbox(
+                left,
+                top,
+                width,
+                height,
+                padding=padding,
+                image_size=image.size,
+            )
+
+    return _extract_words_from_tesseract_dict(
+        data,
+        page_num=page_num,
+        bbox_mapper=bbox_mapper,
+        source=source,
+        angle=angle,
+        min_confidence=min_confidence,
+    )
 
 
 def _ocr_image(
@@ -199,28 +665,136 @@ def _ocr_image(
     page_num: int,
     lang: str,
     tesseract_config: str,
+    preprocess_mode: str,
+    ocr_padding: int,
+    enable_sparse_fallback: bool,
+    enable_rotated_text: bool,
+    suppress_graphic_artifacts: bool,
 ) -> dict[str, Any]:
     """对单页图片执行 OCR，并返回页面级结构化结果。"""
     image = Image.open(image_path).convert("RGB")
+    ocr_image = _preprocess_for_ocr(image, preprocess_mode)
+    normalized_padding = max(0, int(ocr_padding))
+    pass_stats: list[dict[str, Any]] = []
 
-    data = pytesseract.image_to_data(
-        image,
+    words = _run_tesseract_pass(
+        ocr_image,
+        page_num=page_num,
         lang=lang,
         config=tesseract_config,
-        output_type=Output.DICT,
+        padding=normalized_padding,
+        source="primary",
+    )
+    pass_stats.append(
+        {
+            "name": "primary",
+            "angle": 0,
+            "config": tesseract_config,
+            "raw_word_count": len(words),
+            "added_word_count": len(words),
+        }
     )
 
-    words = _extract_words_from_tesseract_dict(data, page_num=page_num)
+    if enable_sparse_fallback:
+        sparse_config = _config_with_psm(tesseract_config, 11)
+        sparse_words = _run_tesseract_pass(
+            ocr_image,
+            page_num=page_num,
+            lang=lang,
+            config=sparse_config,
+            padding=normalized_padding,
+            source="sparse_fallback",
+            min_confidence=DEFAULT_SUPPLEMENTAL_MIN_CONFIDENCE,
+        )
+        before_count = len(words)
+        words = _merge_words(
+            words,
+            sparse_words,
+            iou_threshold=0.55,
+            replace_margin=8,
+        )
+        pass_stats.append(
+            {
+                "name": "sparse_fallback",
+                "angle": 0,
+                "config": sparse_config,
+                "min_confidence": DEFAULT_SUPPLEMENTAL_MIN_CONFIDENCE,
+                "raw_word_count": len(sparse_words),
+                "added_word_count": max(0, len(words) - before_count),
+            }
+        )
+
+    if enable_rotated_text:
+        rotated_config = _config_with_psm(tesseract_config, 11)
+        for angle in ROTATED_TEXT_ANGLES:
+            rotated_image = ocr_image.rotate(angle, expand=True, fillcolor="white")
+            try:
+                rotated_words = _run_tesseract_pass(
+                    rotated_image,
+                    page_num=page_num,
+                    lang=lang,
+                    config=rotated_config,
+                    padding=normalized_padding,
+                    source="rotated_text",
+                    original_size=ocr_image.size,
+                    angle=angle,
+                    min_confidence=DEFAULT_ROTATED_MIN_CONFIDENCE,
+                )
+            finally:
+                rotated_image.close()
+
+            rotated_words = [word for word in rotated_words if _should_keep_rotated_word(word)]
+            before_count = len(words)
+            words = _merge_words(
+                words,
+                rotated_words,
+                iou_threshold=0.35,
+                replace_margin=12,
+            )
+            pass_stats.append(
+                {
+                    "name": "rotated_text",
+                    "angle": angle,
+                    "config": rotated_config,
+                    "min_confidence": DEFAULT_ROTATED_MIN_CONFIDENCE,
+                    "raw_word_count": len(rotated_words),
+                    "added_word_count": max(0, len(words) - before_count),
+                }
+            )
+
+    words, rejected_words = _filter_graphic_artifacts(
+        words,
+        enabled=suppress_graphic_artifacts,
+    )
+    words.sort(
+        key=lambda word: (
+            word["bbox"]["top"],
+            word["bbox"]["left"],
+            0 if word.get("source") == "primary" else 1,
+        )
+    )
+
     lines = _group_words_to_lines(words)
     page_text = "\n".join(line["text"] for line in lines)
+    ocr_image.close()
 
     return {
         "page_num": page_num,
         "image_width": image.width,
         "image_height": image.height,
         "words": words,
+        "rejected_words": rejected_words,
         "lines": lines,
         "text": page_text,
+        "diagnostics": {
+            "preprocess_mode": _normalize_preprocess_mode(preprocess_mode),
+            "ocr_padding": normalized_padding,
+            "sparse_fallback_enabled": enable_sparse_fallback,
+            "rotated_text_enabled": enable_rotated_text,
+            "graphic_artifact_filter_enabled": suppress_graphic_artifacts,
+            "pass_stats": pass_stats,
+            "rejected_word_count": len(rejected_words),
+        },
         "_image": image,
     }
 
@@ -241,6 +815,7 @@ def _build_page_markdown(page_result: dict[str, Any], source_file: str, source_k
             f"- Source kind: `{source_kind}`",
             f"- Image size: `{page_result['image_width']} x {page_result['image_height']}`",
             f"- Word count: `{len(page_result['words'])}`",
+            f"- Rejected graphic-like word count: `{len(page_result.get('rejected_words', []))}`",
             f"- Line count: `{len(page_result['lines'])}`",
             "",
             "## Artifacts",
@@ -262,9 +837,14 @@ def run_ocr_pipeline(
     output_dir: Path,
     source_kind: str = "pdf",
     lang: str = "eng",
-    dpi: int = 200,
+    dpi: int = 300,
     tesseract_config: str = DEFAULT_TESSERACT_CONFIG,
     tesseract_cmd: str | None = None,
+    preprocess_mode: str = DEFAULT_PREPROCESS_MODE,
+    ocr_padding: int = DEFAULT_OCR_PADDING,
+    enable_sparse_fallback: bool = True,
+    enable_rotated_text: bool = DEFAULT_ENABLE_ROTATED_TEXT,
+    suppress_graphic_artifacts: bool = True,
 ) -> dict[str, Any]:
     """运行完整 OCR 流程。"""
     if tesseract_cmd:
@@ -295,6 +875,11 @@ def run_ocr_pipeline(
             page_num=page_index,
             lang=lang,
             tesseract_config=tesseract_config,
+            preprocess_mode=preprocess_mode,
+            ocr_padding=ocr_padding,
+            enable_sparse_fallback=enable_sparse_fallback,
+            enable_rotated_text=enable_rotated_text,
+            suppress_graphic_artifacts=suppress_graphic_artifacts,
         )
 
         image = page_result["_image"]
@@ -337,6 +922,11 @@ def run_ocr_pipeline(
             "lang": lang,
             "tesseract_config": tesseract_config,
             "tesseract_cmd": pytesseract.pytesseract.tesseract_cmd,
+            "preprocess_mode": _normalize_preprocess_mode(preprocess_mode),
+            "ocr_padding": max(0, int(ocr_padding)),
+            "sparse_fallback": enable_sparse_fallback,
+            "rotated_text": enable_rotated_text,
+            "graphic_artifact_filter": suppress_graphic_artifacts,
         },
         "page_count": len(pages),
         "pages": pages,
