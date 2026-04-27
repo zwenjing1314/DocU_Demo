@@ -49,6 +49,7 @@ class JobSkeleton:
     analysis_dir: Path
     ocr_json_path: Path
     full_text_path: Path
+    document_markdown_path: Path
     manifest_path: Path
     analysis_index_path: Path
 
@@ -94,6 +95,7 @@ class JobSkeleton:
             analysis_dir=analysis_dir,
             ocr_json_path=output_dir / "ocr.json",
             full_text_path=output_dir / "full_text.txt",
+            document_markdown_path=output_dir / "document.md",
             manifest_path=output_dir / "job_manifest.json",
             analysis_index_path=analysis_dir / "index.html",
         )

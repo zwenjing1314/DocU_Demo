@@ -76,7 +76,8 @@
     }
     input[type="text"],
     input[type="number"],
-    input[type="file"] {
+    input[type="file"],
+    select {
       width: 100%;
       padding: 11px 12px;
       border-radius: 12px;
@@ -94,6 +95,10 @@
     }
     button:hover {
       opacity: 0.92;
+    }
+    button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
     }
     .checkbox {
       display: flex;
@@ -264,20 +269,64 @@
       <div class="row">
         <div>
           <label for="ocr_lang">OCR 语言</label>
-          <input id="ocr_lang" name="ocr_lang" type="text" value="eng" />
+          <select id="ocr_lang" name="ocr_lang">
+            <option value="chi_sim+eng" selected>简体中文 + 英文</option>
+            <option value="chi_sim">简体中文</option>
+            <option value="eng">英文</option>
+            <option value="chi_tra+eng">繁体中文 + 英文</option>
+            <option value="chi_tra">繁体中文</option>
+          </select>
         </div>
         <div>
           <label for="dpi">DPI</label>
-          <input id="dpi" name="dpi" type="number" value="200" min="72" max="600" />
+          <input id="dpi" name="dpi" type="number" value="300" min="72" max="600" />
         </div>
         <div>
           <label for="tesseract_config">Tesseract 配置</label>
-          <input id="tesseract_config" name="tesseract_config" type="text" value="--oem 3 --psm 3" />
+          <input id="tesseract_config" name="tesseract_config" type="text" value="--oem 3 --psm 3 -c preserve_interword_spaces=1" />
         </div>
       </div>
 
+      <div class="row" style="margin-top: 14px;">
+        <div>
+          <label for="preprocess_mode">图像预处理</label>
+          <select id="preprocess_mode" name="preprocess_mode">
+            <option value="clean" selected>clean：灰度增强</option>
+            <option value="binary">binary：二值化</option>
+            <option value="none">none：不处理</option>
+          </select>
+        </div>
+        <div>
+          <label for="ocr_padding">边缘补白（px）</label>
+          <input id="ocr_padding" name="ocr_padding" type="number" value="24" min="0" max="120" />
+        </div>
+        <div>
+          <label for="enable_sparse_fallback">稀疏文本补扫</label>
+          <select id="enable_sparse_fallback" name="enable_sparse_fallback">
+            <option value="true" selected>开启</option>
+            <option value="false">关闭</option>
+          </select>
+        </div>
+        <div>
+          <label for="enable_rotated_text">45° 倾斜补扫</label>
+          <select id="enable_rotated_text" name="enable_rotated_text">
+            <option value="false" selected>关闭</option>
+            <option value="true">开启</option>
+          </select>
+        </div>
+        <div>
+          <label for="suppress_graphic_artifacts">图形误识别过滤</label>
+          <select id="suppress_graphic_artifacts" name="suppress_graphic_artifacts">
+            <option value="true" selected>开启</option>
+            <option value="false">关闭</option>
+          </select>
+        </div>
+      </div>
+
+      <p class="muted" style="margin-top: 10px;">复杂图表页建议保持增强、稀疏补扫和图形过滤开启；只有页面确实有 45° 倾斜文字时，再开启倾斜补扫。中文 PDF 请先安装 Tesseract 中文语言包，默认推荐使用“简体中文 + 英文”。</p>
+
       <div style="margin-top: 16px;">
-        <button type="submit">开始 OCR</button>
+        <button id="submitButton" type="submit">开始 OCR</button>
       </div>
     </form>
 
@@ -305,14 +354,17 @@
 
   <script>
     const form = document.getElementById('ocrForm');
+    const submitButton = document.getElementById('submitButton');
     const resultEl = document.getElementById('result');
     const statusEl = document.getElementById('status');
     const controlsPanel = document.getElementById('controlsPanel');
     const thresholdInput = document.getElementById('confidenceThreshold');
     const searchInput = document.getElementById('searchTerm');
     const onlyLowConfidenceInput = document.getElementById('onlyLowConfidence');
+    const defaultSubmitButtonText = submitButton.textContent.trim();
 
     const MAX_WORD_CHIPS = 60;
+    let isSubmitting = false;
 
     const state = {
       data: null,
@@ -329,6 +381,16 @@
         return Math.min(100, Math.max(0, parsed));
       }
       return 85;
+    };
+
+    const setSubmitting = (submitting) => {
+      isSubmitting = submitting;
+      Array.from(form.elements).forEach((field) => {
+        if ('disabled' in field) {
+          field.disabled = submitting;
+        }
+      });
+      submitButton.textContent = submitting ? 'OCR 处理中…' : defaultSubmitButtonText;
     };
 
     // 安全卫士。把 <, > 等特殊字符转义，防止用户输入恶意代码（XSS 攻击）
@@ -352,7 +414,7 @@
       const chips = words.slice(0, MAX_WORD_CHIPS).map((word) => `
         <span
           class="word-chip ${chipClass}"
-          title="Line ${word.line_num ?? '-'} · Confidence ${formatConfidence(word.confidence)}"
+          title="Line ${word.line_num ?? '-'} · Confidence ${formatConfidence(word.confidence)} · Source ${word.source ?? 'primary'} · Angle ${word.angle ?? 0}"
         >
           ${escapeHtml(word.text)}
           <span class="word-chip__conf">${formatConfidence(word.confidence)}</span>
@@ -389,6 +451,10 @@
             <div class="muted">低置信度词</div>
             <strong>${data.analysis.low_confidence_word_count}</strong>
           </article>
+          <article class="stat">
+            <div class="muted">过滤图形疑似词</div>
+            <strong>${data.analysis.rejected_word_count ?? 0}</strong>
+          </article>
         </div>
       `;
 
@@ -396,6 +462,7 @@
         <div class="download-links">
           <a class="pill-link" href="${data.downloads.ocr_json}" target="_blank">ocr.json</a>
           <a class="pill-link" href="${data.downloads.full_text}" target="_blank">full_text.txt</a>
+          <a class="pill-link" href="${data.downloads.document_markdown}" target="_blank">document.md</a>
           <a class="pill-link" href="${data.downloads.analysis_page}" target="_blank">错误分析页</a>
           <a class="pill-link" href="${data.downloads.job_manifest}" target="_blank">job_manifest.json</a>
         </div>
@@ -458,7 +525,7 @@
             <div class="page-head">
               <div>
                 <h3>Page ${page.page_num}</h3>
-                <p class="muted">尺寸 ${page.image_width} × ${page.image_height}，共 ${page.word_count} 个词，${page.line_count} 行。</p>
+                <p class="muted">尺寸 ${page.image_width} × ${page.image_height}，共 ${page.word_count} 个词，${page.line_count} 行，过滤 ${page.rejected_word_count ?? 0} 个图形疑似词。</p>
               </div>
               <div class="tag">低置信度 ${lowConfidenceWords.length}</div>
             </div>
@@ -523,6 +590,13 @@
       // 原理：HTML 表单默认的行为是“刷新页面并把数据拼接到 URL 后面”。这在我们的单页应用（SPA）里是不允许的。
       // 作用：这句话相当于告诉浏览器：“别动！这个提交动作由我来接管，你不要刷新页面。”
       event.preventDefault();
+      if (isSubmitting) {
+        statusEl.textContent = '当前 OCR 任务仍在处理中，请勿重复提交。';
+        return;
+      }
+
+      const formData = new FormData(form);
+      setSubmitting(true);
 
       state.data = null;  // 清空旧的分析结果
       state.threshold = normalizeThreshold(thresholdInput.value);
@@ -531,10 +605,6 @@
       controlsPanel.classList.add('hidden');  // 在文件处理期间，先把过滤和搜索框藏起来，避免用户在数据还没回来时就进行无效操作
       resultEl.innerHTML = '';  // 把页面上之前显示的图片和文字全部删掉，准备迎接新内容
       statusEl.textContent = '正在处理，请稍候……';  // 给用户一个视觉反馈，让他们知道程序正在干活，而不是卡死了
-
-      // 作用：这是一个非常方便的浏览器 API。它会自动扫描 <form> 标签里的所有输入项（比如你选中的 PDF 文件），并把它们打包成一个符合 HTTP 协议标准的数据包。
-      // 好处：你不需要手动去写复杂的文件上传逻辑，FormData 能自动处理文件的二进制流。
-      const formData = new FormData(form);
 
       /*fetch('/ocr', ...)：向服务器的 /ocr 地址发送请求。
       method: 'POST'：使用 POST 方法，因为我们要给服务器发送数据（文件）。
@@ -551,7 +621,7 @@
           throw new Error(data.detail || '请求失败');
         }
 
-        statusEl.textContent = '处理完成。';
+        statusEl.textContent = data.cached ? '已复用相同文件和参数的已有结果。' : '处理完成。';
         state.data = data;
         thresholdInput.value = String(
           normalizeThreshold(
@@ -564,6 +634,8 @@
       } catch (error) {
         statusEl.textContent = '处理失败。';
         resultEl.innerHTML = `<section class="panel"><pre>${escapeHtml(error.message || '未知错误')}</pre></section>`;
+      } finally {
+        setSubmitting(false);
       }
     });
   </script>
