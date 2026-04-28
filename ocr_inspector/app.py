@@ -105,6 +105,7 @@ def _write_job_manifest(
             "receipt_json": job.output_url(job.receipt_json_path),
             "router_json": job.output_url(job.router_json_path),
             "bundle_json": job.output_url(job.bundle_json_path),
+            "review_json": job.output_url(job.review_json_path),
             "analysis_page": analysis_url,
             "pages_dir": job.output_url(job.pages_dir),
             "overlays_dir": job.output_url(job.overlays_dir),
@@ -112,6 +113,7 @@ def _write_job_manifest(
             "markdown_dir": job.output_url(job.markdown_dir),
             "tables_dir": job.output_url(job.tables_dir),
             "bundle_segments_dir": job.output_url(job.bundle_segments_dir),
+            "review_overlays_dir": job.output_url(job.review_overlays_dir),
         },
     }
     job.manifest_path.write_text(
@@ -268,8 +270,13 @@ def _build_response_payload(
         cached: bool,
 ) -> dict[str, Any]:
     page_previews = []
+    review_pages_by_num = {
+        page["page_num"]: page
+        for page in ocr_result.get("signature_handwriting_review_result", {}).get("pages", [])
+    }
     for page in ocr_result["pages"]:
         page_num = page["page_num"]
+        review_page = review_pages_by_num.get(page_num, {})
         # 计算单页的低置信度单词数
         low_confidence_word_count = sum(
             1
@@ -299,6 +306,11 @@ def _build_response_payload(
                 "page_num": page_num,
                 "image_url": job.output_url(Path("pages") / page["image_path"]),
                 "overlay_url": job.output_url(Path("overlays") / page["overlay_path"]),
+                "review_overlay_url": (
+                    job.output_url(review_page["review_overlay_path"])
+                    if review_page.get("review_overlay_path")
+                    else ""
+                ),
                 "text_url": job.output_url(Path("texts") / page["text_path"]),
                 "markdown_url": job.output_url(Path("markdown") / page["markdown_path"]),
                 "word_count": len(page["words"]),
@@ -310,6 +322,12 @@ def _build_response_payload(
                 "text": page["text"],
                 "words": words_payload,
                 "diagnostics": page.get("diagnostics", {}),
+                "review_counts": {
+                    "signature_region_count": len(review_page.get("signature_regions", [])),
+                    "handwriting_region_count": len(review_page.get("handwriting_regions", [])),
+                    "suspicious_field_count": len(review_page.get("suspicious_fields", [])),
+                },
+                "review_summary": review_page,
                 "table_count": len(page.get("tables", [])),
                 "tables": [
                     {
@@ -356,6 +374,10 @@ def _build_response_payload(
             "router_confidence": ocr_result.get("document_router_result", {}).get("analysis", {}).get("confidence", 0.0),
             "bundle_segment_count": ocr_result.get("bundle_splitter_result", {}).get("analysis", {}).get("segment_count", 0),
             "bundle_detected": ocr_result.get("bundle_splitter_result", {}).get("analysis", {}).get("detected_bundle", False),
+            "review_page_count": ocr_result.get("signature_handwriting_review_result", {}).get("analysis", {}).get("review_page_count", 0),
+            "signature_region_count": ocr_result.get("signature_handwriting_review_result", {}).get("analysis", {}).get("signature_region_count", 0),
+            "handwriting_region_count": ocr_result.get("signature_handwriting_review_result", {}).get("analysis", {}).get("handwriting_region_count", 0),
+            "suspicious_field_count": ocr_result.get("signature_handwriting_review_result", {}).get("analysis", {}).get("suspicious_field_count", 0),
             "analysis_page": analysis_url,
         },
         # downloads 子字典。 用途：提供完整文件的下载链接
@@ -368,6 +390,7 @@ def _build_response_payload(
             "receipt_json": job.output_url(job.receipt_json_path),
             "router_json": job.output_url(job.router_json_path),
             "bundle_json": job.output_url(job.bundle_json_path),
+            "review_json": job.output_url(job.review_json_path),
             "analysis_page": analysis_url,
             "job_manifest": job.output_url(job.manifest_path),
         },
@@ -384,6 +407,8 @@ def _build_response_payload(
             "router_json": job.output_url(job.router_json_path),
             "bundle_json": job.output_url(job.bundle_json_path),
             "bundle_segments_dir": job.output_url(job.bundle_segments_dir),
+            "review_json": job.output_url(job.review_json_path),
+            "review_overlays_dir": job.output_url(job.review_overlays_dir),
         },
         "tables": [
             {
@@ -401,6 +426,7 @@ def _build_response_payload(
         "receipt_invoice": ocr_result.get("receipt_invoice_result", {}),
         "document_router": ocr_result.get("document_router_result", {}),
         "bundle_splitter": ocr_result.get("bundle_splitter_result", {}),
+        "signature_handwriting_review": ocr_result.get("signature_handwriting_review_result", {}),
         # page_previews 数组。 用途：每一页的详细预览信息
         "page_previews": page_previews,
     }

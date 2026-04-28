@@ -38,6 +38,11 @@ from ocr_engine_5_receipt import (
 )
 from ocr_engine_6_router import build_mixed_document_router_result, write_document_router_json
 from ocr_engine_7_bundle_splitter import build_bundle_splitter_result, write_bundle_splitter_json
+from ocr_engine_8_review import (
+    build_signature_handwriting_review_result,
+    write_review_json,
+    write_review_overlays,
+)
 
 # 默认 OCR 配置：
 # --oem 3: 使用默认 OCR 引擎模式
@@ -2213,8 +2218,9 @@ def run_ocr_pipeline(
     texts_dir = output_dir / "texts"
     markdown_dir = output_dir / "markdown"
     tables_dir = output_dir / "tables"
+    review_overlays_dir = output_dir / "review_overlays"
 
-    for directory in (pages_dir, overlays_dir, texts_dir, markdown_dir, tables_dir):
+    for directory in (pages_dir, overlays_dir, texts_dir, markdown_dir, tables_dir, review_overlays_dir):
         directory.mkdir(parents=True, exist_ok=True)
 
     page_image_paths = prepare_page_images(
@@ -2225,9 +2231,11 @@ def run_ocr_pipeline(
     )
 
     pages: list[dict[str, Any]] = []
+    page_image_paths_by_page_num: dict[int, Path] = {}
     full_text_parts: list[str] = []
 
     for page_index, image_path in enumerate(page_image_paths, start=1):
+        page_image_paths_by_page_num[page_index] = image_path
         page_result = _ocr_image(
             image_path=image_path,
             page_num=page_index,
@@ -2392,6 +2400,11 @@ def run_ocr_pipeline(
                 "topics": ["page_range_detection", "subdocument_export"],
                 "dispatch_after": "mixed_document_router",
             },
+            "signature_handwriting_review": {
+                "enabled": True,
+                "topics": ["signature_region", "handwriting_region", "suspicious_fields"],
+                "dispatch_after": "form_to_json",
+            },
         },
         "page_count": len(pages),
         "layout_analysis": layout_analysis["stats"],
@@ -2471,6 +2484,23 @@ def run_ocr_pipeline(
     write_form_json(form_result, form_json_path)
     write_receipt_invoice_json(receipt_result, receipt_json_path)
 
+    # 复核结果的目标是“圈出人工该看哪里”，而不是强行给出不可靠的最终识别值。
+    review_result = build_signature_handwriting_review_result(
+        ocr_result,
+        form_result=form_result,
+        bundle_result=bundle_result,
+    )
+    write_review_overlays(
+        review_result,
+        review_overlays_dir=review_overlays_dir,
+        page_image_paths_by_page=page_image_paths_by_page_num,
+        output_dir=output_dir,
+    )
+    ocr_result["signature_handwriting_review_result"] = review_result
+
+    review_json_path = output_dir / "signature_handwriting_review.json"
+    write_review_json(review_result, review_json_path)
+
     # 业务链路落定后再更新一次路由结果，让输出里能看到实际分发计划和最终标签。
     router_result = build_mixed_document_router_result(ocr_result)
     ocr_result["document_label"] = router_result["label"]
@@ -2494,6 +2524,7 @@ def run_ocr_pipeline(
         "receipt_json_path": receipt_json_path,
         "router_json_path": router_json_path,
         "bundle_json_path": bundle_json_path,
+        "review_json_path": review_json_path,
         "markdown_dir": markdown_dir,
         "tables_dir": tables_dir,
         "output_dir": output_dir,

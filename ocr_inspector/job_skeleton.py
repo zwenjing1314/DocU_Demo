@@ -55,10 +55,12 @@ class JobSkeleton:
     receipt_json_path: Path
     router_json_path: Path
     bundle_json_path: Path
+    review_json_path: Path
     manifest_path: Path
     tables_index_path: Path
     analysis_index_path: Path
     bundle_segments_dir: Path
+    review_overlays_dir: Path
 
     @classmethod
     def create(
@@ -82,9 +84,10 @@ class JobSkeleton:
         markdown_dir = output_dir / "markdown"
         tables_dir = output_dir / "tables"
         bundle_segments_dir = output_dir / "bundle_segments"
+        review_overlays_dir = output_dir / "review_overlays"
         analysis_dir = output_dir / "analysis"
 
-        for path in (pages_dir, overlays_dir, texts_dir, markdown_dir, tables_dir, bundle_segments_dir, analysis_dir):
+        for path in (pages_dir, overlays_dir, texts_dir, markdown_dir, tables_dir, bundle_segments_dir, review_overlays_dir, analysis_dir):
             path.mkdir(parents=True, exist_ok=True)
 
         suffix = Path(source_filename).suffix.lower()
@@ -110,10 +113,12 @@ class JobSkeleton:
             receipt_json_path=output_dir / "receipt_invoice.json",
             router_json_path=output_dir / "document_router.json",
             bundle_json_path=output_dir / "bundle_splitter.json",
+            review_json_path=output_dir / "signature_handwriting_review.json",
             manifest_path=output_dir / "job_manifest.json",
             tables_index_path=tables_dir / "index.html",
             analysis_index_path=analysis_dir / "index.html",
             bundle_segments_dir=bundle_segments_dir,
+            review_overlays_dir=review_overlays_dir,
         )
 
     def output_url(self, relative_path: str | Path) -> str:

@@ -490,6 +490,18 @@
             <div class="muted">拆分子文档</div>
             <strong>${data.analysis.bundle_segment_count ?? 0}</strong>
           </article>
+          <article class="stat">
+            <div class="muted">签名区域</div>
+            <strong>${data.analysis.signature_region_count ?? 0}</strong>
+          </article>
+          <article class="stat">
+            <div class="muted">手写候选区</div>
+            <strong>${data.analysis.handwriting_region_count ?? 0}</strong>
+          </article>
+          <article class="stat">
+            <div class="muted">可疑字段</div>
+            <strong>${data.analysis.suspicious_field_count ?? 0}</strong>
+          </article>
           <article class="stat warn">
             <div class="muted">低置信度词</div>
             <strong>${data.analysis.low_confidence_word_count}</strong>
@@ -511,6 +523,7 @@
           <a class="pill-link" href="${data.downloads.receipt_json}" target="_blank">receipt_invoice.json</a>
           <a class="pill-link" href="${data.downloads.router_json}" target="_blank">document_router.json</a>
           <a class="pill-link" href="${data.downloads.bundle_json}" target="_blank">bundle_splitter.json</a>
+          <a class="pill-link" href="${data.downloads.review_json}" target="_blank">signature_handwriting_review.json</a>
           <a class="pill-link" href="${data.downloads.analysis_page}" target="_blank">错误分析页</a>
           <a class="pill-link" href="${data.downloads.job_manifest}" target="_blank">job_manifest.json</a>
         </div>
@@ -529,6 +542,7 @@
             config: data.config,
             document_router: data.document_router ?? {},
             bundle_splitter: data.bundle_splitter ?? {},
+            signature_handwriting_review: data.signature_handwriting_review ?? {},
             form: data.form?.normalized_form ?? {},
             table_count: data.analysis.table_count ?? 0,
             receipt_invoice: data.receipt_invoice?.normalized_receipt ?? {},
@@ -578,7 +592,7 @@
             <div class="page-head">
               <div>
                 <h3>Page ${page.page_num}</h3>
-                <p class="muted">尺寸 ${page.image_width} × ${page.image_height}，共 ${page.word_count} 个词，${page.line_count} 行，抽到 ${page.table_count ?? 0} 张表，过滤 ${page.rejected_word_count ?? 0} 个图形疑似词。</p>
+                <p class="muted">尺寸 ${page.image_width} × ${page.image_height}，共 ${page.word_count} 个词，${page.line_count} 行，抽到 ${page.table_count ?? 0} 张表，过滤 ${page.rejected_word_count ?? 0} 个图形疑似词，签名区 ${page.review_counts?.signature_region_count ?? 0}，手写区 ${page.review_counts?.handwriting_region_count ?? 0}，可疑字段 ${page.review_counts?.suspicious_field_count ?? 0}。</p>
               </div>
               <div class="tag">低置信度 ${lowConfidenceWords.length}</div>
             </div>
@@ -588,6 +602,7 @@
               <a class="pill-link" href="${page.markdown_url}" target="_blank">Markdown</a>
               <a class="pill-link" href="${page.image_url}" target="_blank">页图</a>
               <a class="pill-link" href="${page.overlay_url}" target="_blank">叠框图</a>
+              ${page.review_overlay_url ? `<a class="pill-link" href="${page.review_overlay_url}" target="_blank">复核叠框图</a>` : ''}
             </div>
 
             <div class="preview-grid">
@@ -599,6 +614,12 @@
                 <div class="muted" style="margin-bottom: 8px;">叠框图</div>
                 <a href="${page.overlay_url}" target="_blank"><img src="${page.overlay_url}" alt="overlay-${page.page_num}" /></a>
               </div>
+              ${page.review_overlay_url ? `
+                <div>
+                  <div class="muted" style="margin-bottom: 8px;">复核叠框图</div>
+                  <a href="${page.review_overlay_url}" target="_blank"><img src="${page.review_overlay_url}" alt="review-${page.page_num}" /></a>
+                </div>
+              ` : ''}
             </div>
 
             ${renderTableSection(page.tables ?? [])}
