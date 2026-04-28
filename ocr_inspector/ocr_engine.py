@@ -37,6 +37,7 @@ from ocr_engine_5_receipt import (
     write_receipt_invoice_json,
 )
 from ocr_engine_6_router import build_mixed_document_router_result, write_document_router_json
+from ocr_engine_7_bundle_splitter import build_bundle_splitter_result, write_bundle_splitter_json
 
 # 默认 OCR 配置：
 # --oem 3: 使用默认 OCR 引擎模式
@@ -2386,6 +2387,11 @@ def run_ocr_pipeline(
                 "labels": ["invoice", "receipt", "form", "report", "id"],
                 "dispatch_after": "table_to_csv",
             },
+            "bundle_splitter": {
+                "enabled": True,
+                "topics": ["page_range_detection", "subdocument_export"],
+                "dispatch_after": "mixed_document_router",
+            },
         },
         "page_count": len(pages),
         "layout_analysis": layout_analysis["stats"],
@@ -2404,11 +2410,35 @@ def run_ocr_pipeline(
     ocr_result["document_label"] = router_result["label"]
     ocr_result["document_router_result"] = router_result
 
+    # Bundle Splitter 复用页级路由结果，对扫描包 / 拼接 PDF 做起止页识别和导出。
+    bundle_result = build_bundle_splitter_result(
+        ocr_result,
+        source_path=source_path,
+        output_dir=output_dir,
+        source_kind=source_kind,
+    )
+    ocr_result["bundle_splitter_result"] = bundle_result
+
+    bundle_json_path = output_dir / "bundle_splitter.json"
+    write_bundle_splitter_json(bundle_result, bundle_json_path)
+
     selected_label = router_result["label"]
     form_json_path = output_dir / "form.json"
     receipt_json_path = output_dir / "receipt_invoice.json"
+    is_multi_document_bundle = bundle_result["analysis"].get("segment_count", 0) > 1
 
-    if selected_label in {"form", "id"}:
+    if is_multi_document_bundle:
+        # 一旦识别到多文档 bundle，就不要再把整包当成单一业务文档抽取，
+        # 避免把 form / invoice / receipt 混在一起时输出误导性的顶层结果。
+        form_result = build_skipped_form_result(
+            ocr_result["source_file"],
+            "multi-document bundle detected; see bundle_splitter_result",
+        )
+        receipt_result = build_skipped_receipt_invoice_result(
+            ocr_result["source_file"],
+            "multi-document bundle detected; see bundle_splitter_result",
+        )
+    elif selected_label in {"form", "id"}:
         # form / id 优先走键值对和字段标准化链路。
         form_result = build_form_to_json_result(ocr_result)
         receipt_result = build_skipped_receipt_invoice_result(
@@ -2463,6 +2493,7 @@ def run_ocr_pipeline(
         "form_json_path": form_json_path,
         "receipt_json_path": receipt_json_path,
         "router_json_path": router_json_path,
+        "bundle_json_path": bundle_json_path,
         "markdown_dir": markdown_dir,
         "tables_dir": tables_dir,
         "output_dir": output_dir,

@@ -486,6 +486,10 @@
             <div class="muted">路由置信度</div>
             <strong>${data.analysis.router_confidence ?? 0}</strong>
           </article>
+          <article class="stat">
+            <div class="muted">拆分子文档</div>
+            <strong>${data.analysis.bundle_segment_count ?? 0}</strong>
+          </article>
           <article class="stat warn">
             <div class="muted">低置信度词</div>
             <strong>${data.analysis.low_confidence_word_count}</strong>
@@ -506,6 +510,7 @@
           <a class="pill-link" href="${data.downloads.form_json}" target="_blank">form.json</a>
           <a class="pill-link" href="${data.downloads.receipt_json}" target="_blank">receipt_invoice.json</a>
           <a class="pill-link" href="${data.downloads.router_json}" target="_blank">document_router.json</a>
+          <a class="pill-link" href="${data.downloads.bundle_json}" target="_blank">bundle_splitter.json</a>
           <a class="pill-link" href="${data.downloads.analysis_page}" target="_blank">错误分析页</a>
           <a class="pill-link" href="${data.downloads.job_manifest}" target="_blank">job_manifest.json</a>
         </div>
@@ -523,6 +528,7 @@
             page_count: data.page_count,
             config: data.config,
             document_router: data.document_router ?? {},
+            bundle_splitter: data.bundle_splitter ?? {},
             form: data.form?.normalized_form ?? {},
             table_count: data.analysis.table_count ?? 0,
             receipt_invoice: data.receipt_invoice?.normalized_receipt ?? {},

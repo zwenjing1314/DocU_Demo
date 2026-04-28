@@ -104,12 +104,14 @@ def _write_job_manifest(
             "form_json": job.output_url(job.form_json_path),
             "receipt_json": job.output_url(job.receipt_json_path),
             "router_json": job.output_url(job.router_json_path),
+            "bundle_json": job.output_url(job.bundle_json_path),
             "analysis_page": analysis_url,
             "pages_dir": job.output_url(job.pages_dir),
             "overlays_dir": job.output_url(job.overlays_dir),
             "texts_dir": job.output_url(job.texts_dir),
             "markdown_dir": job.output_url(job.markdown_dir),
             "tables_dir": job.output_url(job.tables_dir),
+            "bundle_segments_dir": job.output_url(job.bundle_segments_dir),
         },
     }
     job.manifest_path.write_text(
@@ -352,6 +354,8 @@ def _build_response_payload(
             "receipt_line_item_count": ocr_result.get("receipt_invoice_analysis", {}).get("line_item_count", 0),
             "document_label": ocr_result.get("document_label", ""),
             "router_confidence": ocr_result.get("document_router_result", {}).get("analysis", {}).get("confidence", 0.0),
+            "bundle_segment_count": ocr_result.get("bundle_splitter_result", {}).get("analysis", {}).get("segment_count", 0),
+            "bundle_detected": ocr_result.get("bundle_splitter_result", {}).get("analysis", {}).get("detected_bundle", False),
             "analysis_page": analysis_url,
         },
         # downloads 子字典。 用途：提供完整文件的下载链接
@@ -363,6 +367,7 @@ def _build_response_payload(
             "form_json": job.output_url(job.form_json_path),
             "receipt_json": job.output_url(job.receipt_json_path),
             "router_json": job.output_url(job.router_json_path),
+            "bundle_json": job.output_url(job.bundle_json_path),
             "analysis_page": analysis_url,
             "job_manifest": job.output_url(job.manifest_path),
         },
@@ -377,6 +382,8 @@ def _build_response_payload(
             "form_json": job.output_url(job.form_json_path),
             "receipt_json": job.output_url(job.receipt_json_path),
             "router_json": job.output_url(job.router_json_path),
+            "bundle_json": job.output_url(job.bundle_json_path),
+            "bundle_segments_dir": job.output_url(job.bundle_segments_dir),
         },
         "tables": [
             {
@@ -393,6 +400,7 @@ def _build_response_payload(
         "form": ocr_result.get("form_result", {}),
         "receipt_invoice": ocr_result.get("receipt_invoice_result", {}),
         "document_router": ocr_result.get("document_router_result", {}),
+        "bundle_splitter": ocr_result.get("bundle_splitter_result", {}),
         # page_previews 数组。 用途：每一页的详细预览信息
         "page_previews": page_previews,
     }
