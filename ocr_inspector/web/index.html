@@ -348,6 +348,22 @@
       </div>
     </section>
 
+    <section id="queryPanel" class="panel hidden">
+      <h2>Query Extractor</h2>
+      <p class="muted">对同一份文档直接提问，例如“总金额是多少”“合同起始日是哪天”“申请人姓名是什么”。</p>
+      <div class="controls">
+        <div>
+          <label for="queryInput">自然语言问题</label>
+          <input id="queryInput" type="text" placeholder="例如：总金额是多少" />
+        </div>
+      </div>
+      <div style="margin-top: 14px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+        <button id="queryButton" type="button">开始提问</button>
+        <a id="queryJsonLink" class="pill-link hidden" target="_blank">query_extractor.json</a>
+      </div>
+      <div id="queryResult" style="margin-top: 14px;"></div>
+    </section>
+
     <div id="status" class="muted"></div>
     <section id="result" class="result"></section>
   </main>
@@ -358,6 +374,11 @@
     const resultEl = document.getElementById('result');
     const statusEl = document.getElementById('status');
     const controlsPanel = document.getElementById('controlsPanel');
+    const queryPanel = document.getElementById('queryPanel');
+    const queryInput = document.getElementById('queryInput');
+    const queryButton = document.getElementById('queryButton');
+    const queryResultEl = document.getElementById('queryResult');
+    const queryJsonLink = document.getElementById('queryJsonLink');
     const thresholdInput = document.getElementById('confidenceThreshold');
     const searchInput = document.getElementById('searchTerm');
     const onlyLowConfidenceInput = document.getElementById('onlyLowConfidence');
@@ -370,7 +391,8 @@
       data: null,
       threshold: Number(thresholdInput.value) || 85,
       search: '',
-      onlyLowConfidence: false
+      onlyLowConfidence: false,
+      lastQueryResult: null
     };
 
 
@@ -450,6 +472,46 @@
         </div>
       `;
     };
+
+    const renderQueryResult = (payload) => {
+      if (!payload) {
+        queryResultEl.innerHTML = '<div class="empty">还没有提问结果。</div>';
+        return;
+      }
+
+      const result = payload.result ?? {};
+      if (result.status !== 'ok') {
+        queryResultEl.innerHTML = `<div class="empty">问题：${escapeHtml(payload.query || '')}<br />暂时没有找到可靠答案。</div>`;
+        return;
+      }
+
+      const bbox = result.bbox && Object.keys(result.bbox).length
+        ? `${result.bbox.left}, ${result.bbox.top}, ${result.bbox.right}, ${result.bbox.bottom}`
+        : 'N/A';
+
+      queryResultEl.innerHTML = `
+        <div class="word-section">
+          <div class="section-heading">提问结果</div>
+          <div class="word-chips">
+            <span class="word-chip"><strong>问题</strong> ${escapeHtml(payload.query || '')}</span>
+            <span class="word-chip"><strong>答案</strong> ${escapeHtml(result.answer || '')}</span>
+            <span class="word-chip"><strong>页码</strong> ${result.page_num ?? 'N/A'}</span>
+            <span class="word-chip"><strong>字段</strong> ${escapeHtml(result.matched_field || 'N/A')}</span>
+            <span class="word-chip"><strong>置信度</strong> ${result.confidence ?? 0}</span>
+          </div>
+          <pre>${escapeHtml(JSON.stringify({
+            answer: result.answer,
+            page_num: result.page_num,
+            bbox: result.bbox,
+            snippet: result.snippet,
+            source: result.source,
+            matched_field: result.matched_field,
+            confidence: result.confidence
+          }, null, 2))}</pre>
+          <div class="muted">bbox: ${escapeHtml(bbox)}</div>
+        </div>
+      `;
+    };
     // 画顶部的统计面板。显示任务 ID、页数、低置信度词总数，以及下载链接。
     const renderSummary = (data) => {
       const statsHtml = `
@@ -502,6 +564,10 @@
             <div class="muted">可疑字段</div>
             <strong>${data.analysis.suspicious_field_count ?? 0}</strong>
           </article>
+          <article class="stat">
+            <div class="muted">可查询候选</div>
+            <strong>${data.analysis.query_candidate_count ?? 0}</strong>
+          </article>
           <article class="stat warn">
             <div class="muted">低置信度词</div>
             <strong>${data.analysis.low_confidence_word_count}</strong>
@@ -524,6 +590,7 @@
           <a class="pill-link" href="${data.downloads.router_json}" target="_blank">document_router.json</a>
           <a class="pill-link" href="${data.downloads.bundle_json}" target="_blank">bundle_splitter.json</a>
           <a class="pill-link" href="${data.downloads.review_json}" target="_blank">signature_handwriting_review.json</a>
+          <a class="pill-link" href="${data.downloads.query_json}" target="_blank">query_extractor.json</a>
           <a class="pill-link" href="${data.downloads.analysis_page}" target="_blank">错误分析页</a>
           <a class="pill-link" href="${data.downloads.job_manifest}" target="_blank">job_manifest.json</a>
         </div>
@@ -543,6 +610,7 @@
             document_router: data.document_router ?? {},
             bundle_splitter: data.bundle_splitter ?? {},
             signature_handwriting_review: data.signature_handwriting_review ?? {},
+            query_extractor: data.query_extractor ?? {},
             form: data.form?.normalized_form ?? {},
             table_count: data.analysis.table_count ?? 0,
             receipt_invoice: data.receipt_invoice?.normalized_receipt ?? {},
@@ -674,10 +742,13 @@
       setSubmitting(true);
 
       state.data = null;  // 清空旧的分析结果
+      state.lastQueryResult = null;
       state.threshold = normalizeThreshold(thresholdInput.value);
       state.search = searchInput.value.trim().toLowerCase();
       state.onlyLowConfidence = onlyLowConfidenceInput.checked;
       controlsPanel.classList.add('hidden');  // 在文件处理期间，先把过滤和搜索框藏起来，避免用户在数据还没回来时就进行无效操作
+      queryPanel.classList.add('hidden');
+      queryResultEl.innerHTML = '';
       resultEl.innerHTML = '';  // 把页面上之前显示的图片和文字全部删掉，准备迎接新内容
       statusEl.textContent = '正在处理，请稍候……';  // 给用户一个视觉反馈，让他们知道程序正在干活，而不是卡死了
 
@@ -705,12 +776,57 @@
         );
         state.threshold = normalizeThreshold(thresholdInput.value);
         controlsPanel.classList.remove('hidden');
+        queryPanel.classList.remove('hidden');
+        queryJsonLink.classList.remove('hidden');
+        queryJsonLink.href = data.downloads.query_json;
+        queryJsonLink.textContent = 'query_extractor.json';
+        renderQueryResult(state.lastQueryResult);
         renderResults();
       } catch (error) {
         statusEl.textContent = '处理失败。';
         resultEl.innerHTML = `<section class="panel"><pre>${escapeHtml(error.message || '未知错误')}</pre></section>`;
       } finally {
         setSubmitting(false);
+      }
+    });
+
+    queryButton.addEventListener('click', async () => {
+      if (!state.data?.job_id) {
+        queryResultEl.innerHTML = '<div class="empty">请先完成 OCR。</div>';
+        return;
+      }
+
+      const query = queryInput.value.trim();
+      if (!query) {
+        queryResultEl.innerHTML = '<div class="empty">请先输入问题。</div>';
+        return;
+      }
+
+      queryButton.disabled = true;
+      queryButton.textContent = '提问中…';
+      queryResultEl.innerHTML = '<div class="empty">正在查找答案，请稍候……</div>';
+
+      try {
+        const formData = new FormData();
+        formData.append('job_id', state.data.job_id);
+        formData.append('query', query);
+
+        const response = await fetch('/query', {
+          method: 'POST',
+          body: formData
+        });
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.detail || '提问失败');
+        }
+
+        state.lastQueryResult = data;
+        renderQueryResult(data);
+      } catch (error) {
+        queryResultEl.innerHTML = `<div class="empty">${escapeHtml(error.message || '提问失败')}</div>`;
+      } finally {
+        queryButton.disabled = false;
+        queryButton.textContent = '开始提问';
       }
     });
   </script>

@@ -30,6 +30,7 @@ from ocr_engine import (
     DEFAULT_TESSERACT_CONFIG,
     run_ocr_pipeline,
 )
+from ocr_engine_9_query import answer_document_query, load_query_json, write_query_json
 
 BASE_DIR = Path(__file__).resolve().parent
 UPLOADS_DIR = BASE_DIR / "uploads"
@@ -106,6 +107,7 @@ def _write_job_manifest(
             "router_json": job.output_url(job.router_json_path),
             "bundle_json": job.output_url(job.bundle_json_path),
             "review_json": job.output_url(job.review_json_path),
+            "query_json": job.output_url(job.query_json_path),
             "analysis_page": analysis_url,
             "pages_dir": job.output_url(job.pages_dir),
             "overlays_dir": job.output_url(job.overlays_dir),
@@ -378,6 +380,7 @@ def _build_response_payload(
             "signature_region_count": ocr_result.get("signature_handwriting_review_result", {}).get("analysis", {}).get("signature_region_count", 0),
             "handwriting_region_count": ocr_result.get("signature_handwriting_review_result", {}).get("analysis", {}).get("handwriting_region_count", 0),
             "suspicious_field_count": ocr_result.get("signature_handwriting_review_result", {}).get("analysis", {}).get("suspicious_field_count", 0),
+            "query_candidate_count": ocr_result.get("query_extractor_result", {}).get("analysis", {}).get("candidate_count", 0),
             "analysis_page": analysis_url,
         },
         # downloads 子字典。 用途：提供完整文件的下载链接
@@ -391,6 +394,7 @@ def _build_response_payload(
             "router_json": job.output_url(job.router_json_path),
             "bundle_json": job.output_url(job.bundle_json_path),
             "review_json": job.output_url(job.review_json_path),
+            "query_json": job.output_url(job.query_json_path),
             "analysis_page": analysis_url,
             "job_manifest": job.output_url(job.manifest_path),
         },
@@ -409,6 +413,7 @@ def _build_response_payload(
             "bundle_segments_dir": job.output_url(job.bundle_segments_dir),
             "review_json": job.output_url(job.review_json_path),
             "review_overlays_dir": job.output_url(job.review_overlays_dir),
+            "query_json": job.output_url(job.query_json_path),
         },
         "tables": [
             {
@@ -427,6 +432,7 @@ def _build_response_payload(
         "document_router": ocr_result.get("document_router_result", {}),
         "bundle_splitter": ocr_result.get("bundle_splitter_result", {}),
         "signature_handwriting_review": ocr_result.get("signature_handwriting_review_result", {}),
+        "query_extractor": ocr_result.get("query_extractor_result", {}),
         # page_previews 数组。 用途：每一页的详细预览信息
         "page_previews": page_previews,
     }
@@ -586,6 +592,38 @@ def upload_document(
     # 第七层：最终清理（finally 块）
     finally:
         file.file.close()
+
+
+@app.post("/query")
+def query_document(
+        job_id: str = Form(...),
+        query: str = Form(...),
+) -> dict[str, Any]:
+    """对同一份已处理文档做自然语言字段提问。"""
+    normalized_job_id = (job_id or "").strip()
+    normalized_query = (query or "").strip()
+
+    if not normalized_job_id:
+        raise HTTPException(status_code=400, detail="缺少 job_id。")
+    if not normalized_query:
+        raise HTTPException(status_code=400, detail="缺少 query。")
+
+    output_dir = OUTPUTS_DIR / normalized_job_id
+    query_json_path = output_dir / "query_extractor.json"
+    if not query_json_path.exists():
+        raise HTTPException(status_code=404, detail="未找到对应任务的 query_extractor.json。")
+
+    query_result = load_query_json(query_json_path)
+    answer_payload = answer_document_query(query_result, normalized_query)
+    write_query_json(query_result, query_json_path)
+
+    return {
+        "job_id": normalized_job_id,
+        "query": normalized_query,
+        "result": answer_payload,
+        "query_history_count": len(query_result.get("query_history", [])),
+        "query_json": f"/outputs/{normalized_job_id}/query_extractor.json",
+    }
 
 
 @app.get("/health")
