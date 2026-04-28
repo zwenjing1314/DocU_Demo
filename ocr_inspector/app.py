@@ -100,19 +100,14 @@ def _write_job_manifest(
             "ocr_json": job.output_url(job.ocr_json_path),
             "full_text": job.output_url(job.full_text_path),
             "document_markdown": job.output_url(job.document_markdown_path),
-<<<<<<< HEAD
             "tables_index": job.output_url(job.tables_index_path),
-=======
->>>>>>> f503714b846ca24951421d31dfab65365d43c294
+            "form_json": job.output_url(job.form_json_path),
             "analysis_page": analysis_url,
             "pages_dir": job.output_url(job.pages_dir),
             "overlays_dir": job.output_url(job.overlays_dir),
             "texts_dir": job.output_url(job.texts_dir),
             "markdown_dir": job.output_url(job.markdown_dir),
-<<<<<<< HEAD
             "tables_dir": job.output_url(job.tables_dir),
-=======
->>>>>>> f503714b846ca24951421d31dfab65365d43c294
         },
     }
     job.manifest_path.write_text(
@@ -311,7 +306,6 @@ def _build_response_payload(
                 "text": page["text"],
                 "words": words_payload,
                 "diagnostics": page.get("diagnostics", {}),
-<<<<<<< HEAD
                 "table_count": len(page.get("tables", [])),
                 "tables": [
                     {
@@ -324,8 +318,6 @@ def _build_response_payload(
                     }
                     for table in page.get("tables", [])
                 ],
-=======
->>>>>>> f503714b846ca24951421d31dfab65365d43c294
             }
         )
 
@@ -352,10 +344,9 @@ def _build_response_payload(
                 len(page.get("rejected_words", []))
                 for page in ocr_result["pages"]
             ),
-<<<<<<< HEAD
             "table_count": len(ocr_result.get("tables", [])),
-=======
->>>>>>> f503714b846ca24951421d31dfab65365d43c294
+            "form_field_count": ocr_result.get("form_analysis", {}).get("field_count", 0),
+            "selected_option_count": ocr_result.get("form_analysis", {}).get("selected_option_count", 0),
             "analysis_page": analysis_url,
         },
         # downloads 子字典。 用途：提供完整文件的下载链接
@@ -363,10 +354,8 @@ def _build_response_payload(
             "ocr_json": job.output_url(job.ocr_json_path),
             "full_text": job.output_url(job.full_text_path),
             "document_markdown": job.output_url(job.document_markdown_path),
-<<<<<<< HEAD
             "tables_index": job.output_url(job.tables_index_path),
-=======
->>>>>>> f503714b846ca24951421d31dfab65365d43c294
+            "form_json": job.output_url(job.form_json_path),
             "analysis_page": analysis_url,
             "job_manifest": job.output_url(job.manifest_path),
         },
@@ -376,9 +365,9 @@ def _build_response_payload(
             "overlays_dir": job.output_url(job.overlays_dir),
             "texts_dir": job.output_url(job.texts_dir),
             "markdown_dir": job.output_url(job.markdown_dir),
-<<<<<<< HEAD
             "tables_dir": job.output_url(job.tables_dir),
             "document_markdown": job.output_url(job.document_markdown_path),
+            "form_json": job.output_url(job.form_json_path),
         },
         "tables": [
             {
@@ -392,10 +381,7 @@ def _build_response_payload(
             }
             for table in ocr_result.get("tables", [])
         ],
-=======
-            "document_markdown": job.output_url(job.document_markdown_path),
-        },
->>>>>>> f503714b846ca24951421d31dfab65365d43c294
+        "form": ocr_result.get("form_result", {}),
         # page_previews 数组。 用途：每一页的详细预览信息
         "page_previews": page_previews,
     }

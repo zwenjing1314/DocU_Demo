@@ -431,7 +431,6 @@
       `;
     };
 
-<<<<<<< HEAD
     const renderTableSection = (tables) => {
       if (!tables.length) {
         return '<div class="empty">当前页没有检测到可导出的表格。</div>';
@@ -451,9 +450,6 @@
         </div>
       `;
     };
-
-=======
->>>>>>> f503714b846ca24951421d31dfab65365d43c294
     // 画顶部的统计面板。显示任务 ID、页数、低置信度词总数，以及下载链接。
     const renderSummary = (data) => {
       const statsHtml = `
@@ -470,13 +466,14 @@
             <div class="muted">页数</div>
             <strong>${data.page_count}</strong>
           </article>
-<<<<<<< HEAD
           <article class="stat">
             <div class="muted">抽取表格</div>
             <strong>${data.analysis.table_count ?? 0}</strong>
           </article>
-=======
->>>>>>> f503714b846ca24951421d31dfab65365d43c294
+          <article class="stat">
+            <div class="muted">表单字段</div>
+            <strong>${data.analysis.form_field_count ?? 0}</strong>
+          </article>
           <article class="stat warn">
             <div class="muted">低置信度词</div>
             <strong>${data.analysis.low_confidence_word_count}</strong>
@@ -493,10 +490,9 @@
           <a class="pill-link" href="${data.downloads.ocr_json}" target="_blank">ocr.json</a>
           <a class="pill-link" href="${data.downloads.full_text}" target="_blank">full_text.txt</a>
           <a class="pill-link" href="${data.downloads.document_markdown}" target="_blank">document.md</a>
-<<<<<<< HEAD
           <a class="pill-link" href="${data.downloads.tables_index}" target="_blank">tables/index.html</a>
-=======
->>>>>>> f503714b846ca24951421d31dfab65365d43c294
+          <a class="pill-link" href="${data.downloads.form_json}" target="_blank">form.json</a>
+          <a class="pill-link" href="${data.downloads.tables_index}" target="_blank">tables/index.html</a>
           <a class="pill-link" href="${data.downloads.analysis_page}" target="_blank">错误分析页</a>
           <a class="pill-link" href="${data.downloads.job_manifest}" target="_blank">job_manifest.json</a>
         </div>
@@ -513,10 +509,9 @@
             source_kind: data.source_kind,
             page_count: data.page_count,
             config: data.config,
-<<<<<<< HEAD
             table_count: data.analysis.table_count,
-=======
->>>>>>> f503714b846ca24951421d31dfab65365d43c294
+            form: data.form?.normalized_form ?? {},
+            table_count: data.analysis.table_count ?? 0,
             artifacts: data.artifacts
           }, null, 2))}</pre>
         </section>
@@ -563,11 +558,8 @@
             <div class="page-head">
               <div>
                 <h3>Page ${page.page_num}</h3>
-<<<<<<< HEAD
                 <p class="muted">尺寸 ${page.image_width} × ${page.image_height}，共 ${page.word_count} 个词，${page.line_count} 行，抽到 ${page.table_count ?? 0} 张表，过滤 ${page.rejected_word_count ?? 0} 个图形疑似词。</p>
-=======
-                <p class="muted">尺寸 ${page.image_width} × ${page.image_height}，共 ${page.word_count} 个词，${page.line_count} 行，过滤 ${page.rejected_word_count ?? 0} 个图形疑似词。</p>
->>>>>>> f503714b846ca24951421d31dfab65365d43c294
+                <p class="muted">尺寸 ${page.image_width} × ${page.image_height}，共 ${page.word_count} 个词，${page.line_count} 行，抽到 ${page.table_count ?? 0} 张表，过滤 ${page.rejected_word_count ?? 0} 个图形疑似词。</p>
               </div>
               <div class="tag">低置信度 ${lowConfidenceWords.length}</div>
             </div>
@@ -590,10 +582,7 @@
               </div>
             </div>
 
-<<<<<<< HEAD
             ${renderTableSection(page.tables ?? [])}
-=======
->>>>>>> f503714b846ca24951421d31dfab65365d43c294
             ${renderWordSection(`低置信度词（低于 ${state.threshold}%）`, lowConfidenceWords, 'low')}
             ${searchTerm ? renderWordSection(`搜索匹配“${escapeHtml(searchInput.value)}”`, searchHits, 'hit') : ''}
           </article>

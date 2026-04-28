@@ -11,17 +11,12 @@ from __future__ import annotations
 """
 
 from collections import Counter, defaultdict
-<<<<<<< HEAD
 import contextlib
 import csv
 from datetime import datetime, timezone
 from functools import cmp_to_key
 from html import escape as html_escape
 import io
-=======
-from datetime import datetime, timezone
-from functools import cmp_to_key
->>>>>>> f503714b846ca24951421d31dfab65365d43c294
 from pathlib import Path
 from statistics import median
 from typing import Any
@@ -34,6 +29,8 @@ from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageOps
 import pymupdf
 import pytesseract
 from pytesseract import Output
+
+from ocr_engine_4_json import build_form_to_json_result, write_form_json
 
 # 默认 OCR 配置：
 # --oem 3: 使用默认 OCR 引擎模式
@@ -52,14 +49,11 @@ _LAYOUT_TOP_MARGIN_RATIO = 0.12
 _LAYOUT_BOTTOM_MARGIN_RATIO = 0.10
 _LAYOUT_FULL_WIDTH_RATIO = 0.68
 _LAYOUT_HEADING_MAX_WORDS = 18
-<<<<<<< HEAD
 _TABLE_MIN_ROWS = 2
 _TABLE_MIN_COLS = 2
 _TABLE_ROW_GAP_RATIO = 2.2
 _TABLE_COLUMN_TOLERANCE_RATIO = 0.025
 _TABLE_CELL_GAP_RATIO = 1.7
-=======
->>>>>>> f503714b846ca24951421d31dfab65365d43c294
 _LIST_BULLET_RE = re.compile(r"^(?P<marker>[-*•·●○◦])\s*")
 _LIST_ORDERED_RE = re.compile(
     r"^(?P<marker>(?:\(\d+\)|\d+[.)]|[A-Za-z][.)]|[一二三四五六七八九十]+[、.]|（[一二三四五六七八九十]+）))\s*"
@@ -1076,7 +1070,6 @@ def _analyze_document_layout(pages: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-<<<<<<< HEAD
 def _words_to_text(words: list[dict[str, Any]]) -> str:
     parts: list[str] = []
     for word in words:
@@ -1732,8 +1725,6 @@ def _write_tables_index(tables: list[dict[str, Any]], output_path: Path, *, sour
     output_path.write_text(html, encoding="utf-8")
 
 
-=======
->>>>>>> f503714b846ca24951421d31dfab65365d43c294
 def _draw_overlay(
         image: Image.Image,
         words: list[dict[str, Any]],
@@ -2132,7 +2123,6 @@ def _build_page_markdown(
         *,
         content_markdown: str,
         layout_stats: dict[str, Any],
-<<<<<<< HEAD
         table_summaries: list[dict[str, Any]],
 ) -> str:
     """生成按页导出的 Markdown 文本。"""
@@ -2147,11 +2137,6 @@ def _build_page_markdown(
             f"- [Table {table['table_id']} CSV](../tables/{table['csv_path']}) · "
             f"[HTML](../tables/{table['html_path']})"
         )
-=======
-) -> str:
-    """生成按页导出的 Markdown 文本。"""
-    structured_body = content_markdown.strip() or "_No structured text detected._"
->>>>>>> f503714b846ca24951421d31dfab65365d43c294
 
     return "\n".join(
         [
@@ -2166,18 +2151,10 @@ def _build_page_markdown(
             f"- Line count: `{len(page_result['lines'])}`",
             f"- Filtered header/footer line count: `{layout_stats.get('filtered_margin_line_count', 0)}`",
             f"- Detected column count: `{layout_stats.get('column_count', 1)}`",
-<<<<<<< HEAD
             f"- Detected table count: `{len(table_summaries)}`",
             "",
             "## Artifacts",
             *artifact_lines,
-=======
-            "",
-            "## Artifacts",
-            f"- [Page image](../pages/{page_result['image_path']})",
-            f"- [Overlay image](../overlays/{page_result['overlay_path']})",
-            f"- [Plain text](../texts/{page_result['text_path']})",
->>>>>>> f503714b846ca24951421d31dfab65365d43c294
             "",
             "## Structured OCR Markdown",
             "",
@@ -2228,14 +2205,9 @@ def run_ocr_pipeline(
     overlays_dir = output_dir / "overlays"
     texts_dir = output_dir / "texts"
     markdown_dir = output_dir / "markdown"
-<<<<<<< HEAD
     tables_dir = output_dir / "tables"
 
     for directory in (pages_dir, overlays_dir, texts_dir, markdown_dir, tables_dir):
-=======
-
-    for directory in (pages_dir, overlays_dir, texts_dir, markdown_dir):
->>>>>>> f503714b846ca24951421d31dfab65365d43c294
         directory.mkdir(parents=True, exist_ok=True)
 
     page_image_paths = prepare_page_images(
@@ -2293,7 +2265,6 @@ def run_ocr_pipeline(
         page_layout["page_num"]: page_layout
         for page_layout in layout_analysis["pages"]
     }
-<<<<<<< HEAD
 
     source_tables_by_page: dict[int, list[dict[str, Any]]] = defaultdict(list)
     if source_kind == "pdf":
@@ -2343,18 +2314,11 @@ def run_ocr_pipeline(
             )
 
         # 优先使用 PDF 原生抽表，扫描件和图片页再回退到 OCR 词框恢复。
-=======
-    for page in pages:
-        page_layout = page_layouts_by_page_num.get(page["page_num"], {})
->>>>>>> f503714b846ca24951421d31dfab65365d43c294
         page["layout"] = {
             "items": page_layout.get("items", []),
             "stats": page_layout.get("stats", {}),
         }
-<<<<<<< HEAD
         page["tables"] = page_table_summaries
-=======
->>>>>>> f503714b846ca24951421d31dfab65365d43c294
         markdown_path = markdown_dir / page["markdown_path"]
         markdown_path.write_text(
             _build_page_markdown(
@@ -2363,23 +2327,17 @@ def run_ocr_pipeline(
                 source_kind=source_kind,
                 content_markdown=page_layout.get("content_markdown", ""),
                 layout_stats=page_layout.get("stats", {}),
-<<<<<<< HEAD
                 table_summaries=page_table_summaries,
-=======
->>>>>>> f503714b846ca24951421d31dfab65365d43c294
             ),
             encoding="utf-8",
         )
 
-<<<<<<< HEAD
     _write_tables_index(
         all_tables,
         tables_dir / "index.html",
         source_file=source_path.name,
     )
 
-=======
->>>>>>> f503714b846ca24951421d31dfab65365d43c294
     document_markdown_path = output_dir / "document.md"
     document_markdown_path.write_text(
         _build_document_markdown(source_path.name, layout_analysis["pages"]),
@@ -2404,11 +2362,14 @@ def run_ocr_pipeline(
                 "enabled": True,
                 "topics": ["title", "paragraph", "list", "header_footer", "reading_order"],
             },
-<<<<<<< HEAD
             "table_to_csv": {
                 "enabled": True,
                 "formats": ["csv", "html"],
                 "detectors": ["pdf_text", "ocr_layout"],
+            },
+            "form_to_json": {
+                "enabled": True,
+                "topics": ["key_value", "checkbox", "field_normalization"],
             },
         },
         "page_count": len(pages),
@@ -2419,13 +2380,16 @@ def run_ocr_pipeline(
             "ocr_layout_table_count": table_source_counts.get("ocr_layout", 0),
         },
         "tables": all_tables,
-=======
-        },
-        "page_count": len(pages),
-        "layout_analysis": layout_analysis["stats"],
->>>>>>> f503714b846ca24951421d31dfab65365d43c294
         "pages": pages,
     }
+
+    # 表单抽取放在 layout / table 结果准备完成之后，便于复用更完整的页面语义。
+    form_result = build_form_to_json_result(ocr_result)
+    ocr_result["form_result"] = form_result
+    ocr_result["form_analysis"] = form_result["analysis"]
+
+    form_json_path = output_dir / "form.json"
+    write_form_json(form_result, form_json_path)
 
     json_path = output_dir / "ocr.json"
     json_path.write_text(
@@ -2438,10 +2402,8 @@ def run_ocr_pipeline(
         "ocr_json_path": json_path,
         "full_text_path": full_text_path,
         "document_markdown_path": document_markdown_path,
+        "form_json_path": form_json_path,
         "markdown_dir": markdown_dir,
-<<<<<<< HEAD
         "tables_dir": tables_dir,
-=======
->>>>>>> f503714b846ca24951421d31dfab65365d43c294
         "output_dir": output_dir,
     }

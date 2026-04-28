@@ -46,19 +46,14 @@ class JobSkeleton:
     overlays_dir: Path
     texts_dir: Path
     markdown_dir: Path
-<<<<<<< HEAD
     tables_dir: Path
-=======
->>>>>>> f503714b846ca24951421d31dfab65365d43c294
     analysis_dir: Path
     ocr_json_path: Path
     full_text_path: Path
     document_markdown_path: Path
+    form_json_path: Path
     manifest_path: Path
-<<<<<<< HEAD
     tables_index_path: Path
-=======
->>>>>>> f503714b846ca24951421d31dfab65365d43c294
     analysis_index_path: Path
 
     @classmethod
@@ -81,16 +76,10 @@ class JobSkeleton:
         overlays_dir = output_dir / "overlays"
         texts_dir = output_dir / "texts"
         markdown_dir = output_dir / "markdown"
-<<<<<<< HEAD
         tables_dir = output_dir / "tables"
         analysis_dir = output_dir / "analysis"
 
         for path in (pages_dir, overlays_dir, texts_dir, markdown_dir, tables_dir, analysis_dir):
-=======
-        analysis_dir = output_dir / "analysis"
-
-        for path in (pages_dir, overlays_dir, texts_dir, markdown_dir, analysis_dir):
->>>>>>> f503714b846ca24951421d31dfab65365d43c294
             path.mkdir(parents=True, exist_ok=True)
 
         suffix = Path(source_filename).suffix.lower()
@@ -107,19 +96,14 @@ class JobSkeleton:
             overlays_dir=overlays_dir,
             texts_dir=texts_dir,
             markdown_dir=markdown_dir,
-<<<<<<< HEAD
             tables_dir=tables_dir,
-=======
->>>>>>> f503714b846ca24951421d31dfab65365d43c294
             analysis_dir=analysis_dir,
             ocr_json_path=output_dir / "ocr.json",
             full_text_path=output_dir / "full_text.txt",
             document_markdown_path=output_dir / "document.md",
+            form_json_path=output_dir / "form.json",
             manifest_path=output_dir / "job_manifest.json",
-<<<<<<< HEAD
             tables_index_path=tables_dir / "index.html",
-=======
->>>>>>> f503714b846ca24951421d31dfab65365d43c294
             analysis_index_path=analysis_dir / "index.html",
         )
 
