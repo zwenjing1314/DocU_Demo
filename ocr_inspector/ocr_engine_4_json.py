@@ -279,6 +279,44 @@ NORMALIZERS = {
 }
 
 
+def build_skipped_form_result(source_file: str, reason: str) -> dict[str, Any]:
+    """为未命中表单链路的文档生成稳定占位结果。"""
+    return {
+        "schema_version": FORM_SCHEMA_VERSION,
+        "document_type": "form",
+        "source_file": source_file,
+        "status": "skipped",
+        "skip_reason": reason,
+        "normalized_form": {
+            "name": "",
+            "date": "",
+            "address": "",
+            "phone": "",
+            "email": "",
+            "id_number": "",
+            "gender": "",
+            "selected_options": [],
+        },
+        "fields": {
+            field_name: {
+                "value": "",
+                "raw_value": "",
+                "page_num": None,
+                "source": "",
+                "label": "",
+            }
+            for field_name in FORM_FIELD_ORDER
+        },
+        "checkboxes": [],
+        "raw_key_values": [],
+        "analysis": {
+            "field_count": 0,
+            "selected_option_count": 0,
+            "checkbox_count": 0,
+        },
+    }
+
+
 def _normalize_checkbox_label(label: str) -> str:
     cleaned = _strip_value_noise(label)
     return OPTION_LABEL_NORMALIZATION.get(cleaned.casefold(), cleaned)

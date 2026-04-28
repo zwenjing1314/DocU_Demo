@@ -53,6 +53,7 @@ class JobSkeleton:
     document_markdown_path: Path
     form_json_path: Path
     receipt_json_path: Path
+    router_json_path: Path
     manifest_path: Path
     tables_index_path: Path
     analysis_index_path: Path
@@ -104,6 +105,7 @@ class JobSkeleton:
             document_markdown_path=output_dir / "document.md",
             form_json_path=output_dir / "form.json",
             receipt_json_path=output_dir / "receipt_invoice.json",
+            router_json_path=output_dir / "document_router.json",
             manifest_path=output_dir / "job_manifest.json",
             tables_index_path=tables_dir / "index.html",
             analysis_index_path=analysis_dir / "index.html",

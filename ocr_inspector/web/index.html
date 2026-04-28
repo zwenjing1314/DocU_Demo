@@ -467,6 +467,10 @@
             <strong>${data.page_count}</strong>
           </article>
           <article class="stat">
+            <div class="muted">文档标签</div>
+            <strong>${data.analysis.document_label || 'unknown'}</strong>
+          </article>
+          <article class="stat">
             <div class="muted">抽取表格</div>
             <strong>${data.analysis.table_count ?? 0}</strong>
           </article>
@@ -477,6 +481,10 @@
           <article class="stat">
             <div class="muted">票据明细行</div>
             <strong>${data.analysis.receipt_line_item_count ?? 0}</strong>
+          </article>
+          <article class="stat">
+            <div class="muted">路由置信度</div>
+            <strong>${data.analysis.router_confidence ?? 0}</strong>
           </article>
           <article class="stat warn">
             <div class="muted">低置信度词</div>
@@ -497,6 +505,7 @@
           <a class="pill-link" href="${data.downloads.tables_index}" target="_blank">tables/index.html</a>
           <a class="pill-link" href="${data.downloads.form_json}" target="_blank">form.json</a>
           <a class="pill-link" href="${data.downloads.receipt_json}" target="_blank">receipt_invoice.json</a>
+          <a class="pill-link" href="${data.downloads.router_json}" target="_blank">document_router.json</a>
           <a class="pill-link" href="${data.downloads.analysis_page}" target="_blank">错误分析页</a>
           <a class="pill-link" href="${data.downloads.job_manifest}" target="_blank">job_manifest.json</a>
         </div>
@@ -513,6 +522,7 @@
             source_kind: data.source_kind,
             page_count: data.page_count,
             config: data.config,
+            document_router: data.document_router ?? {},
             form: data.form?.normalized_form ?? {},
             table_count: data.analysis.table_count ?? 0,
             receipt_invoice: data.receipt_invoice?.normalized_receipt ?? {},

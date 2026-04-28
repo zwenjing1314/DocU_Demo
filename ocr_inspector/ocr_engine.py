@@ -30,8 +30,13 @@ import pymupdf
 import pytesseract
 from pytesseract import Output
 
-from ocr_engine_4_json import build_form_to_json_result, write_form_json
-from ocr_engine_5_receipt import build_receipt_invoice_result, write_receipt_invoice_json
+from ocr_engine_4_json import build_form_to_json_result, build_skipped_form_result, write_form_json
+from ocr_engine_5_receipt import (
+    build_receipt_invoice_result,
+    build_skipped_receipt_invoice_result,
+    write_receipt_invoice_json,
+)
+from ocr_engine_6_router import build_mixed_document_router_result, write_document_router_json
 
 # 默认 OCR 配置：
 # --oem 3: 使用默认 OCR 引擎模式
@@ -2376,6 +2381,11 @@ def run_ocr_pipeline(
                 "enabled": True,
                 "topics": ["vendor", "date", "tax", "total", "line_items"],
             },
+            "mixed_document_router": {
+                "enabled": True,
+                "labels": ["invoice", "receipt", "form", "report", "id"],
+                "dispatch_after": "table_to_csv",
+            },
         },
         "page_count": len(pages),
         "layout_analysis": layout_analysis["stats"],
@@ -2388,21 +2398,56 @@ def run_ocr_pipeline(
         "pages": pages,
     }
 
-    # 表单抽取放在 layout / table 结果准备完成之后，便于复用更完整的页面语义。
-    form_result = build_form_to_json_result(ocr_result)
+    # 路由决策放在 table 之后、业务抽取之前，
+    # 这样分类时可以复用版面和表格信息，同时避免所有文档继续走同一条链。
+    router_result = build_mixed_document_router_result(ocr_result)
+    ocr_result["document_label"] = router_result["label"]
+    ocr_result["document_router_result"] = router_result
+
+    selected_label = router_result["label"]
+    form_json_path = output_dir / "form.json"
+    receipt_json_path = output_dir / "receipt_invoice.json"
+
+    if selected_label in {"form", "id"}:
+        # form / id 优先走键值对和字段标准化链路。
+        form_result = build_form_to_json_result(ocr_result)
+        receipt_result = build_skipped_receipt_invoice_result(
+            ocr_result["source_file"],
+            f"document routed to {selected_label} chain",
+        )
+    elif selected_label in {"invoice", "receipt"}:
+        # receipt / invoice 优先走票据 schema 和明细行恢复链路。
+        receipt_result = build_receipt_invoice_result(ocr_result)
+        form_result = build_skipped_form_result(
+            ocr_result["source_file"],
+            f"document routed to {selected_label} chain",
+        )
+    else:
+        # report 暂时只保留基础 OCR / layout / table 输出，业务抽取写空占位结果。
+        form_result = build_skipped_form_result(
+            ocr_result["source_file"],
+            "document routed to report chain",
+        )
+        receipt_result = build_skipped_receipt_invoice_result(
+            ocr_result["source_file"],
+            "document routed to report chain",
+        )
+
     ocr_result["form_result"] = form_result
     ocr_result["form_analysis"] = form_result["analysis"]
-
-    form_json_path = output_dir / "form.json"
-    write_form_json(form_result, form_json_path)
-
-    # 票据 / 发票抽取放在表格导出之后执行，这样 items[] 可以优先复用已恢复的表格结果。
-    receipt_result = build_receipt_invoice_result(ocr_result)
     ocr_result["receipt_invoice_result"] = receipt_result
     ocr_result["receipt_invoice_analysis"] = receipt_result["analysis"]
 
-    receipt_json_path = output_dir / "receipt_invoice.json"
+    write_form_json(form_result, form_json_path)
     write_receipt_invoice_json(receipt_result, receipt_json_path)
+
+    # 业务链路落定后再更新一次路由结果，让输出里能看到实际分发计划和最终标签。
+    router_result = build_mixed_document_router_result(ocr_result)
+    ocr_result["document_label"] = router_result["label"]
+    ocr_result["document_router_result"] = router_result
+
+    router_json_path = output_dir / "document_router.json"
+    write_document_router_json(router_result, router_json_path)
 
     json_path = output_dir / "ocr.json"
     json_path.write_text(
@@ -2417,6 +2462,7 @@ def run_ocr_pipeline(
         "document_markdown_path": document_markdown_path,
         "form_json_path": form_json_path,
         "receipt_json_path": receipt_json_path,
+        "router_json_path": router_json_path,
         "markdown_dir": markdown_dir,
         "tables_dir": tables_dir,
         "output_dir": output_dir,

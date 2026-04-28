@@ -350,6 +350,35 @@ def _extract_items_from_lines(lines: list[dict[str, Any]]) -> list[dict[str, Any
     return items
 
 
+def build_skipped_receipt_invoice_result(source_file: str, reason: str) -> dict[str, Any]:
+    """为未命中票据链路的文档生成稳定占位结果。"""
+    return {
+        "schema_version": RECEIPT_SCHEMA_VERSION,
+        "document_type": "invoice",
+        "source_file": source_file,
+        "status": "skipped",
+        "skip_reason": reason,
+        "normalized_receipt": {
+            "vendor": "",
+            "date": "",
+            "invoice_number": "",
+            "currency": "",
+            "subtotal": None,
+            "tax": None,
+            "total": None,
+            "items": [],
+        },
+        "analysis": {
+            "line_item_count": 0,
+            "table_backed_item_count": 0,
+            "fallback_item_count": 0,
+            "has_total": False,
+            "has_tax": False,
+            "has_date": False,
+        },
+    }
+
+
 def build_receipt_invoice_result(ocr_result: dict[str, Any]) -> dict[str, Any]:
     lines = _collect_sorted_lines(ocr_result)
     text_blob = "\n".join(line["text"] for line in lines)
