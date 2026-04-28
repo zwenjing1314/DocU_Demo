@@ -31,6 +31,7 @@ import pytesseract
 from pytesseract import Output
 
 from ocr_engine_4_json import build_form_to_json_result, write_form_json
+from ocr_engine_5_receipt import build_receipt_invoice_result, write_receipt_invoice_json
 
 # 默认 OCR 配置：
 # --oem 3: 使用默认 OCR 引擎模式
@@ -2371,6 +2372,10 @@ def run_ocr_pipeline(
                 "enabled": True,
                 "topics": ["key_value", "checkbox", "field_normalization"],
             },
+            "receipt_invoice_extractor": {
+                "enabled": True,
+                "topics": ["vendor", "date", "tax", "total", "line_items"],
+            },
         },
         "page_count": len(pages),
         "layout_analysis": layout_analysis["stats"],
@@ -2391,6 +2396,14 @@ def run_ocr_pipeline(
     form_json_path = output_dir / "form.json"
     write_form_json(form_result, form_json_path)
 
+    # 票据 / 发票抽取放在表格导出之后执行，这样 items[] 可以优先复用已恢复的表格结果。
+    receipt_result = build_receipt_invoice_result(ocr_result)
+    ocr_result["receipt_invoice_result"] = receipt_result
+    ocr_result["receipt_invoice_analysis"] = receipt_result["analysis"]
+
+    receipt_json_path = output_dir / "receipt_invoice.json"
+    write_receipt_invoice_json(receipt_result, receipt_json_path)
+
     json_path = output_dir / "ocr.json"
     json_path.write_text(
         json.dumps(ocr_result, ensure_ascii=False, indent=2),
@@ -2403,6 +2416,7 @@ def run_ocr_pipeline(
         "full_text_path": full_text_path,
         "document_markdown_path": document_markdown_path,
         "form_json_path": form_json_path,
+        "receipt_json_path": receipt_json_path,
         "markdown_dir": markdown_dir,
         "tables_dir": tables_dir,
         "output_dir": output_dir,

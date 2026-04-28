@@ -102,6 +102,7 @@ def _write_job_manifest(
             "document_markdown": job.output_url(job.document_markdown_path),
             "tables_index": job.output_url(job.tables_index_path),
             "form_json": job.output_url(job.form_json_path),
+            "receipt_json": job.output_url(job.receipt_json_path),
             "analysis_page": analysis_url,
             "pages_dir": job.output_url(job.pages_dir),
             "overlays_dir": job.output_url(job.overlays_dir),
@@ -347,6 +348,7 @@ def _build_response_payload(
             "table_count": len(ocr_result.get("tables", [])),
             "form_field_count": ocr_result.get("form_analysis", {}).get("field_count", 0),
             "selected_option_count": ocr_result.get("form_analysis", {}).get("selected_option_count", 0),
+            "receipt_line_item_count": ocr_result.get("receipt_invoice_analysis", {}).get("line_item_count", 0),
             "analysis_page": analysis_url,
         },
         # downloads 子字典。 用途：提供完整文件的下载链接
@@ -356,6 +358,7 @@ def _build_response_payload(
             "document_markdown": job.output_url(job.document_markdown_path),
             "tables_index": job.output_url(job.tables_index_path),
             "form_json": job.output_url(job.form_json_path),
+            "receipt_json": job.output_url(job.receipt_json_path),
             "analysis_page": analysis_url,
             "job_manifest": job.output_url(job.manifest_path),
         },
@@ -368,6 +371,7 @@ def _build_response_payload(
             "tables_dir": job.output_url(job.tables_dir),
             "document_markdown": job.output_url(job.document_markdown_path),
             "form_json": job.output_url(job.form_json_path),
+            "receipt_json": job.output_url(job.receipt_json_path),
         },
         "tables": [
             {
@@ -382,6 +386,7 @@ def _build_response_payload(
             for table in ocr_result.get("tables", [])
         ],
         "form": ocr_result.get("form_result", {}),
+        "receipt_invoice": ocr_result.get("receipt_invoice_result", {}),
         # page_previews 数组。 用途：每一页的详细预览信息
         "page_previews": page_previews,
     }
