@@ -108,6 +108,7 @@ def _write_job_manifest(
             "bundle_json": job.output_url(job.bundle_json_path),
             "review_json": job.output_url(job.review_json_path),
             "query_json": job.output_url(job.query_json_path),
+            "contract_schema_json": job.output_url(job.contract_schema_json_path),
             "analysis_page": analysis_url,
             "pages_dir": job.output_url(job.pages_dir),
             "overlays_dir": job.output_url(job.overlays_dir),
@@ -381,6 +382,8 @@ def _build_response_payload(
             "handwriting_region_count": ocr_result.get("signature_handwriting_review_result", {}).get("analysis", {}).get("handwriting_region_count", 0),
             "suspicious_field_count": ocr_result.get("signature_handwriting_review_result", {}).get("analysis", {}).get("suspicious_field_count", 0),
             "query_candidate_count": ocr_result.get("query_extractor_result", {}).get("analysis", {}).get("candidate_count", 0),
+            "contract_field_count": ocr_result.get("contract_schema_result", {}).get("analysis", {}).get("field_count", 0),
+            "contract_detected": ocr_result.get("contract_schema_result", {}).get("analysis", {}).get("is_contract_like", False),
             "analysis_page": analysis_url,
         },
         # downloads 子字典。 用途：提供完整文件的下载链接
@@ -395,6 +398,7 @@ def _build_response_payload(
             "bundle_json": job.output_url(job.bundle_json_path),
             "review_json": job.output_url(job.review_json_path),
             "query_json": job.output_url(job.query_json_path),
+            "contract_schema_json": job.output_url(job.contract_schema_json_path),
             "analysis_page": analysis_url,
             "job_manifest": job.output_url(job.manifest_path),
         },
@@ -414,6 +418,7 @@ def _build_response_payload(
             "review_json": job.output_url(job.review_json_path),
             "review_overlays_dir": job.output_url(job.review_overlays_dir),
             "query_json": job.output_url(job.query_json_path),
+            "contract_schema_json": job.output_url(job.contract_schema_json_path),
         },
         "tables": [
             {
@@ -433,6 +438,7 @@ def _build_response_payload(
         "bundle_splitter": ocr_result.get("bundle_splitter_result", {}),
         "signature_handwriting_review": ocr_result.get("signature_handwriting_review_result", {}),
         "query_extractor": ocr_result.get("query_extractor_result", {}),
+        "contract_schema": ocr_result.get("contract_schema_result", {}),
         # page_previews 数组。 用途：每一页的详细预览信息
         "page_previews": page_previews,
     }

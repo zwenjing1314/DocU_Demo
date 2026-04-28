@@ -44,6 +44,7 @@ from ocr_engine_8_review import (
     write_review_overlays,
 )
 from ocr_engine_9_query import build_query_extractor_result, write_query_json
+from ocr_engine_10_contract_schema import build_contract_schema_result, write_contract_schema_json
 
 # 默认 OCR 配置：
 # --oem 3: 使用默认 OCR 引擎模式
@@ -2411,6 +2412,20 @@ def run_ocr_pipeline(
                 "topics": ["query_based_extraction", "nl_field_lookup"],
                 "dispatch_after": "signature_handwriting_review",
             },
+            "custom_schema_extractor": {
+                "enabled": True,
+                "vertical": "contract",
+                "fields": [
+                    "contract_title",
+                    "contract_number",
+                    "party_a",
+                    "party_b",
+                    "signing_date",
+                    "effective_date",
+                    "end_date",
+                    "total_amount",
+                ],
+            },
         },
         "page_count": len(pages),
         "layout_analysis": layout_analysis["stats"],
@@ -2514,6 +2529,16 @@ def run_ocr_pipeline(
     query_json_path = output_dir / "query_extractor.json"
     write_query_json(query_result, query_json_path)
 
+    # Custom Schema Extractor 这里只做一个垂直：合同 8 字段。
+    contract_schema_result = build_contract_schema_result(
+        ocr_result,
+        query_result=query_result,
+    )
+    ocr_result["contract_schema_result"] = contract_schema_result
+
+    contract_schema_json_path = output_dir / "contract_schema.json"
+    write_contract_schema_json(contract_schema_result, contract_schema_json_path)
+
     # 业务链路落定后再更新一次路由结果，让输出里能看到实际分发计划和最终标签。
     router_result = build_mixed_document_router_result(ocr_result)
     ocr_result["document_label"] = router_result["label"]
@@ -2539,6 +2564,7 @@ def run_ocr_pipeline(
         "bundle_json_path": bundle_json_path,
         "review_json_path": review_json_path,
         "query_json_path": query_json_path,
+        "contract_schema_json_path": contract_schema_json_path,
         "markdown_dir": markdown_dir,
         "tables_dir": tables_dir,
         "output_dir": output_dir,

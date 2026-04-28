@@ -57,6 +57,7 @@ class JobSkeleton:
     bundle_json_path: Path
     review_json_path: Path
     query_json_path: Path
+    contract_schema_json_path: Path
     manifest_path: Path
     tables_index_path: Path
     analysis_index_path: Path
@@ -116,6 +117,7 @@ class JobSkeleton:
             bundle_json_path=output_dir / "bundle_splitter.json",
             review_json_path=output_dir / "signature_handwriting_review.json",
             query_json_path=output_dir / "query_extractor.json",
+            contract_schema_json_path=output_dir / "contract_schema.json",
             manifest_path=output_dir / "job_manifest.json",
             tables_index_path=tables_dir / "index.html",
             analysis_index_path=analysis_dir / "index.html",

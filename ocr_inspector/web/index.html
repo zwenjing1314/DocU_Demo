@@ -568,6 +568,14 @@
             <div class="muted">可查询候选</div>
             <strong>${data.analysis.query_candidate_count ?? 0}</strong>
           </article>
+          <article class="stat">
+            <div class="muted">合同字段</div>
+            <strong>${data.analysis.contract_field_count ?? 0}</strong>
+          </article>
+          <article class="stat">
+            <div class="muted">合同识别</div>
+            <strong>${data.analysis.contract_detected ? '是' : '否'}</strong>
+          </article>
           <article class="stat warn">
             <div class="muted">低置信度词</div>
             <strong>${data.analysis.low_confidence_word_count}</strong>
@@ -591,6 +599,7 @@
           <a class="pill-link" href="${data.downloads.bundle_json}" target="_blank">bundle_splitter.json</a>
           <a class="pill-link" href="${data.downloads.review_json}" target="_blank">signature_handwriting_review.json</a>
           <a class="pill-link" href="${data.downloads.query_json}" target="_blank">query_extractor.json</a>
+          <a class="pill-link" href="${data.downloads.contract_schema_json}" target="_blank">contract_schema.json</a>
           <a class="pill-link" href="${data.downloads.analysis_page}" target="_blank">错误分析页</a>
           <a class="pill-link" href="${data.downloads.job_manifest}" target="_blank">job_manifest.json</a>
         </div>
@@ -611,6 +620,8 @@
             bundle_splitter: data.bundle_splitter ?? {},
             signature_handwriting_review: data.signature_handwriting_review ?? {},
             query_extractor: data.query_extractor ?? {},
+            contract_detected: data.analysis.contract_detected ?? false,
+            contract_schema: data.contract_schema ?? {},
             form: data.form?.normalized_form ?? {},
             table_count: data.analysis.table_count ?? 0,
             receipt_invoice: data.receipt_invoice?.normalized_receipt ?? {},
