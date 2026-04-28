@@ -6,7 +6,10 @@ pymupdf
 pytesseract
 pytest
 numpy
+<<<<<<< HEAD
 fastapi
 pymupdf
 pytesseract
 app
+=======
+>>>>>>> f503714b846ca24951421d31dfab65365d43c294
