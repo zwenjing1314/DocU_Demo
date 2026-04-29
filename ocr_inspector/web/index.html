@@ -359,6 +359,7 @@
       </div>
       <div style="margin-top: 14px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
         <button id="queryButton" type="button">开始提问</button>
+        <button id="evidenceQaButton" type="button">证据问答</button>
         <a id="queryJsonLink" class="pill-link hidden" target="_blank">query_extractor.json</a>
       </div>
       <div id="queryResult" style="margin-top: 14px;"></div>
@@ -377,6 +378,7 @@
     const queryPanel = document.getElementById('queryPanel');
     const queryInput = document.getElementById('queryInput');
     const queryButton = document.getElementById('queryButton');
+    const evidenceQaButton = document.getElementById('evidenceQaButton');
     const queryResultEl = document.getElementById('queryResult');
     const queryJsonLink = document.getElementById('queryJsonLink');
     const thresholdInput = document.getElementById('confidenceThreshold');
@@ -392,7 +394,8 @@
       threshold: Number(thresholdInput.value) || 85,
       search: '',
       onlyLowConfidence: false,
-      lastQueryResult: null
+      lastQueryResult: null,
+      lastEvidenceQaResult: null
     };
 
 
@@ -480,6 +483,37 @@
       }
 
       const result = payload.result ?? {};
+      if (payload.mode === 'evidence_qa') {
+        const evidenceChunks = result.evidence_chunks ?? [];
+        const evidenceHtml = evidenceChunks.length
+          ? evidenceChunks.map((item) => `
+              <div class="word-chip" title="${escapeHtml(item.unit_id || '')}">
+                <strong>p${escapeHtml((item.page_nums || []).join(',') || 'N/A')}</strong>
+                ${escapeHtml(item.snippet || '')}
+              </div>
+            `).join('')
+          : '<div class="empty">没有可用证据。</div>';
+
+        queryResultEl.innerHTML = `
+          <div class="word-section">
+            <div class="section-heading">证据问答结果</div>
+            <div class="word-chips">
+              <span class="word-chip"><strong>问题</strong> ${escapeHtml(payload.query || '')}</span>
+              <span class="word-chip"><strong>状态</strong> ${escapeHtml(result.status || '')}</span>
+              <span class="word-chip"><strong>答案</strong> ${escapeHtml(result.answer || '证据不足')}</span>
+              <span class="word-chip"><strong>证据页</strong> ${(result.evidence_pages || []).join(', ') || 'N/A'}</span>
+              <span class="word-chip"><strong>置信度</strong> ${result.confidence ?? 0}</span>
+            </div>
+            <div class="word-section">
+              <div class="section-heading">证据片段（${evidenceChunks.length}）</div>
+              <div class="word-chips">${evidenceHtml}</div>
+            </div>
+            <pre>${escapeHtml(JSON.stringify(result, null, 2))}</pre>
+          </div>
+        `;
+        return;
+      }
+
       if (result.status !== 'ok') {
         queryResultEl.innerHTML = `<div class="empty">问题：${escapeHtml(payload.query || '')}<br />暂时没有找到可靠答案。</div>`;
         return;
@@ -605,6 +639,10 @@
             <strong>${data.analysis.direct_pdf_outline_count ?? 0}</strong>
           </article>
           <article class="stat">
+            <div class="muted">证据单元</div>
+            <strong>${data.analysis.evidence_unit_count ?? 0}</strong>
+          </article>
+          <article class="stat">
             <div class="muted">人工修订</div>
             <strong>${data.analysis.review_revision_count ?? 0}</strong>
           </article>
@@ -635,6 +673,7 @@
           <a class="pill-link" href="${data.downloads.multi_page_consolidation_json}" target="_blank">multi_page_consolidation.json</a>
           <a class="pill-link" href="${data.downloads.layout_chunks_json}" target="_blank">layout_chunks.json</a>
           <a class="pill-link" href="${data.downloads.direct_pdf_structure_json}" target="_blank">direct_pdf_structure.json</a>
+          <a class="pill-link" href="${data.downloads.evidence_qa_json}" target="_blank">evidence_qa.json</a>
           <a class="pill-link" href="${data.downloads.review_workbench}" target="_blank">Review Workbench</a>
           <a class="pill-link" href="${data.downloads.review_workbench_revisions_json}" target="_blank">review_workbench_revisions.json</a>
           <a class="pill-link" href="${data.downloads.analysis_page}" target="_blank">错误分析页</a>
@@ -662,6 +701,7 @@
             multi_page_consolidation: data.multi_page_consolidation ?? {},
             layout_chunks: data.layout_chunks?.analysis ?? {},
             direct_pdf_structure: data.direct_pdf_structure?.analysis ?? {},
+            evidence_qa: data.evidence_qa?.analysis ?? {},
             total_check_status: data.analysis.total_check_status ?? 'not_available',
             form: data.form?.normalized_form ?? {},
             table_count: data.analysis.table_count ?? 0,
@@ -795,6 +835,7 @@
 
       state.data = null;  // 清空旧的分析结果
       state.lastQueryResult = null;
+      state.lastEvidenceQaResult = null;
       state.threshold = normalizeThreshold(thresholdInput.value);
       state.search = searchInput.value.trim().toLowerCase();
       state.onlyLowConfidence = onlyLowConfidenceInput.checked;
@@ -879,6 +920,46 @@
       } finally {
         queryButton.disabled = false;
         queryButton.textContent = '开始提问';
+      }
+    });
+
+    evidenceQaButton.addEventListener('click', async () => {
+      if (!state.data?.job_id) {
+        queryResultEl.innerHTML = '<div class="empty">请先完成 OCR。</div>';
+        return;
+      }
+
+      const query = queryInput.value.trim();
+      if (!query) {
+        queryResultEl.innerHTML = '<div class="empty">请先输入问题。</div>';
+        return;
+      }
+
+      evidenceQaButton.disabled = true;
+      evidenceQaButton.textContent = '找证据中…';
+      queryResultEl.innerHTML = '<div class="empty">正在检索证据页，请稍候……</div>';
+
+      try {
+        const formData = new FormData();
+        formData.append('job_id', state.data.job_id);
+        formData.append('query', query);
+
+        const response = await fetch('/evidence-qa', {
+          method: 'POST',
+          body: formData
+        });
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.detail || '证据问答失败');
+        }
+
+        state.lastEvidenceQaResult = {...data, mode: 'evidence_qa'};
+        renderQueryResult(state.lastEvidenceQaResult);
+      } catch (error) {
+        queryResultEl.innerHTML = `<div class="empty">${escapeHtml(error.message || '证据问答失败')}</div>`;
+      } finally {
+        evidenceQaButton.disabled = false;
+        evidenceQaButton.textContent = '证据问答';
       }
     });
   </script>

@@ -49,6 +49,7 @@ from ocr_engine_11_consolidator import build_multi_page_consolidation_result, wr
 from ocr_engine_12_review_workbench import initialize_review_workbench_revisions
 from ocr_engine_13_chunker import build_layout_aware_chunk_result, write_layout_chunks_json
 from ocr_engine_14_direct_pdf_structurer import build_direct_pdf_structure_result, write_direct_pdf_structure_json
+from ocr_engine_15_evidence_qa import build_evidence_qa_result, write_evidence_qa_json
 
 # 默认 OCR 配置：
 # --oem 3: 使用默认 OCR 引擎模式
@@ -2450,6 +2451,11 @@ def run_ocr_pipeline(
                 "topics": ["direct_pdf_understanding", "strict_schema_output"],
                 "dispatch_after": "layout_aware_chunker",
             },
+            "evidence_grounded_multi_page_qa": {
+                "enabled": True,
+                "topics": ["multi_page_qa", "evidence_pages", "traceable_answers"],
+                "dispatch_after": "direct_pdf_structurer",
+            },
         },
         "page_count": len(pages),
         "layout_analysis": layout_analysis["stats"],
@@ -2588,6 +2594,13 @@ def run_ocr_pipeline(
     direct_pdf_structure_json_path = output_dir / "direct_pdf_structure.json"
     write_direct_pdf_structure_json(direct_pdf_structure_result, direct_pdf_structure_json_path)
 
+    # Evidence-grounded QA 先建立证据索引，提问接口必须基于这些 evidence units 返回页码。
+    evidence_qa_result = build_evidence_qa_result(ocr_result)
+    ocr_result["evidence_qa_result"] = evidence_qa_result
+
+    evidence_qa_json_path = output_dir / "evidence_qa.json"
+    write_evidence_qa_json(evidence_qa_result, evidence_qa_json_path)
+
     # Review Workbench 首次写一个空修订记录，后续人工保存时在同一文件中追加批次。
     initialize_review_workbench_revisions(output_dir, source_file=ocr_result["source_file"])
 
@@ -2620,6 +2633,7 @@ def run_ocr_pipeline(
         "multi_page_consolidation_json_path": multi_page_consolidation_json_path,
         "layout_chunks_json_path": layout_chunks_json_path,
         "direct_pdf_structure_json_path": direct_pdf_structure_json_path,
+        "evidence_qa_json_path": evidence_qa_json_path,
         "markdown_dir": markdown_dir,
         "tables_dir": tables_dir,
         "output_dir": output_dir,

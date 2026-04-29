@@ -61,6 +61,7 @@ class JobSkeleton:
     multi_page_consolidation_json_path: Path
     layout_chunks_json_path: Path
     direct_pdf_structure_json_path: Path
+    evidence_qa_json_path: Path
     review_workbench_revisions_json_path: Path
     manifest_path: Path
     tables_index_path: Path
@@ -125,6 +126,7 @@ class JobSkeleton:
             multi_page_consolidation_json_path=output_dir / "multi_page_consolidation.json",
             layout_chunks_json_path=output_dir / "layout_chunks.json",
             direct_pdf_structure_json_path=output_dir / "direct_pdf_structure.json",
+            evidence_qa_json_path=output_dir / "evidence_qa.json",
             review_workbench_revisions_json_path=output_dir / "review_workbench_revisions.json",
             manifest_path=output_dir / "job_manifest.json",
             tables_index_path=tables_dir / "index.html",

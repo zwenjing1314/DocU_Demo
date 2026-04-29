@@ -37,6 +37,7 @@ from ocr_engine_12_review_workbench import (
     load_review_workbench_revisions,
     save_review_workbench_revisions,
 )
+from ocr_engine_15_evidence_qa import answer_evidence_question, load_evidence_qa_json, write_evidence_qa_json
 
 BASE_DIR = Path(__file__).resolve().parent
 UPLOADS_DIR = BASE_DIR / "uploads"
@@ -126,6 +127,7 @@ def _write_job_manifest(
             "multi_page_consolidation_json": job.output_url(job.multi_page_consolidation_json_path),
             "layout_chunks_json": job.output_url(job.layout_chunks_json_path),
             "direct_pdf_structure_json": job.output_url(job.direct_pdf_structure_json_path),
+            "evidence_qa_json": job.output_url(job.evidence_qa_json_path),
             "review_workbench": f"/review/{job.job_id}",
             "review_workbench_revisions_json": job.output_url(job.review_workbench_revisions_json_path),
             "analysis_page": analysis_url,
@@ -416,6 +418,8 @@ def _build_response_payload(
             "direct_pdf_schema_valid": ocr_result.get("direct_pdf_structure_result", {}).get("validation", {}).get("schema_valid", False),
             "direct_pdf_outline_count": ocr_result.get("direct_pdf_structure_result", {}).get("analysis", {}).get("outline_item_count", 0),
             "direct_pdf_native_text_pages": ocr_result.get("direct_pdf_structure_result", {}).get("analysis", {}).get("native_text_page_count", 0),
+            "evidence_unit_count": ocr_result.get("evidence_qa_result", {}).get("analysis", {}).get("unit_count", 0),
+            "evidence_query_count": ocr_result.get("evidence_qa_result", {}).get("analysis", {}).get("query_history_count", 0),
             "review_revision_count": load_review_workbench_revisions(job.output_dir).get("analysis", {}).get("revision_count", 0),
             "analysis_page": analysis_url,
         },
@@ -435,6 +439,7 @@ def _build_response_payload(
             "multi_page_consolidation_json": job.output_url(job.multi_page_consolidation_json_path),
             "layout_chunks_json": job.output_url(job.layout_chunks_json_path),
             "direct_pdf_structure_json": job.output_url(job.direct_pdf_structure_json_path),
+            "evidence_qa_json": job.output_url(job.evidence_qa_json_path),
             "review_workbench": f"/review/{job.job_id}",
             "review_workbench_revisions_json": job.output_url(job.review_workbench_revisions_json_path),
             "analysis_page": analysis_url,
@@ -460,6 +465,7 @@ def _build_response_payload(
             "multi_page_consolidation_json": job.output_url(job.multi_page_consolidation_json_path),
             "layout_chunks_json": job.output_url(job.layout_chunks_json_path),
             "direct_pdf_structure_json": job.output_url(job.direct_pdf_structure_json_path),
+            "evidence_qa_json": job.output_url(job.evidence_qa_json_path),
             "review_workbench": f"/review/{job.job_id}",
             "review_workbench_revisions_json": job.output_url(job.review_workbench_revisions_json_path),
         },
@@ -485,6 +491,7 @@ def _build_response_payload(
         "multi_page_consolidation": ocr_result.get("multi_page_consolidation_result", {}),
         "layout_chunks": ocr_result.get("layout_chunk_result", {}),
         "direct_pdf_structure": ocr_result.get("direct_pdf_structure_result", {}),
+        "evidence_qa": ocr_result.get("evidence_qa_result", {}),
         # page_previews 数组。 用途：每一页的详细预览信息
         "page_previews": page_previews,
     }
@@ -689,6 +696,35 @@ def query_document(
         "result": answer_payload,
         "query_history_count": len(query_result.get("query_history", [])),
         "query_json": f"/outputs/{normalized_job_id}/query_extractor.json",
+    }
+
+
+@app.post("/evidence-qa")
+def evidence_qa_document(
+        job_id: str = Form(...),
+        query: str = Form(...),
+) -> dict[str, Any]:
+    """多页证据问答：回答必须带 evidence pages / chunks。"""
+    normalized_job_id = _normalize_job_id(job_id)
+    normalized_query = (query or "").strip()
+    if not normalized_query:
+        raise HTTPException(status_code=400, detail="缺少 query。")
+
+    output_dir = OUTPUTS_DIR / normalized_job_id
+    evidence_json_path = output_dir / "evidence_qa.json"
+    if not evidence_json_path.exists():
+        raise HTTPException(status_code=404, detail="未找到对应任务的 evidence_qa.json。")
+
+    qa_result = load_evidence_qa_json(evidence_json_path)
+    answer_payload = answer_evidence_question(qa_result, normalized_query)
+    write_evidence_qa_json(qa_result, evidence_json_path)
+
+    return {
+        "job_id": normalized_job_id,
+        "query": normalized_query,
+        "result": answer_payload,
+        "query_history_count": len(qa_result.get("query_history", [])),
+        "evidence_qa_json": f"/outputs/{normalized_job_id}/evidence_qa.json",
     }
 
 
