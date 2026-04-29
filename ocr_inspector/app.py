@@ -134,6 +134,7 @@ def _write_job_manifest(
             "direct_pdf_structure_json": job.output_url(job.direct_pdf_structure_json_path),
             "evidence_qa_json": job.output_url(job.evidence_qa_json_path),
             "complex_page_analysis_json": job.output_url(job.complex_page_analysis_json_path),
+            "degradation_report_json": job.output_url(job.degradation_report_json_path),
             "review_workbench": f"/review/{job.job_id}",
             "review_workbench_revisions_json": job.output_url(job.review_workbench_revisions_json_path),
             "analysis_page": analysis_url,
@@ -144,6 +145,7 @@ def _write_job_manifest(
             "tables_dir": job.output_url(job.tables_dir),
             "bundle_segments_dir": job.output_url(job.bundle_segments_dir),
             "review_overlays_dir": job.output_url(job.review_overlays_dir),
+            "robustness_lab_dir": job.output_url(job.robustness_lab_dir),
         },
     }
     job.manifest_path.write_text(
@@ -428,6 +430,10 @@ def _build_response_payload(
             "evidence_query_count": ocr_result.get("evidence_qa_result", {}).get("analysis", {}).get("query_history_count", 0),
             "chart_candidate_count": ocr_result.get("complex_page_analysis_result", {}).get("analysis", {}).get("chart_candidate_count", 0),
             "chart_qa_ready": ocr_result.get("complex_page_analysis_result", {}).get("analysis", {}).get("qa_ready", False),
+            "degradation_variant_count": ocr_result.get("robustness_lab_result", {}).get("analysis", {}).get("variant_count", 0),
+            "robustness_generated_page_count": ocr_result.get("robustness_lab_result", {}).get("analysis", {}).get("generated_page_count", 0),
+            "robustness_most_fragile_layer": ocr_result.get("robustness_lab_result", {}).get("analysis", {}).get("most_fragile_layer", "unknown"),
+            "robustness_evaluation_mode": ocr_result.get("robustness_lab_result", {}).get("analysis", {}).get("evaluation_mode", "visual_proxy"),
             "review_revision_count": load_review_workbench_revisions(job.output_dir).get("analysis", {}).get("revision_count", 0),
             "analysis_page": analysis_url,
         },
@@ -449,6 +455,7 @@ def _build_response_payload(
             "direct_pdf_structure_json": job.output_url(job.direct_pdf_structure_json_path),
             "evidence_qa_json": job.output_url(job.evidence_qa_json_path),
             "complex_page_analysis_json": job.output_url(job.complex_page_analysis_json_path),
+            "degradation_report_json": job.output_url(job.degradation_report_json_path),
             "review_workbench": f"/review/{job.job_id}",
             "review_workbench_revisions_json": job.output_url(job.review_workbench_revisions_json_path),
             "analysis_page": analysis_url,
@@ -476,8 +483,10 @@ def _build_response_payload(
             "direct_pdf_structure_json": job.output_url(job.direct_pdf_structure_json_path),
             "evidence_qa_json": job.output_url(job.evidence_qa_json_path),
             "complex_page_analysis_json": job.output_url(job.complex_page_analysis_json_path),
+            "degradation_report_json": job.output_url(job.degradation_report_json_path),
             "review_workbench": f"/review/{job.job_id}",
             "review_workbench_revisions_json": job.output_url(job.review_workbench_revisions_json_path),
+            "robustness_lab_dir": job.output_url(job.robustness_lab_dir),
         },
         "tables": [
             {
@@ -503,6 +512,7 @@ def _build_response_payload(
         "direct_pdf_structure": ocr_result.get("direct_pdf_structure_result", {}),
         "evidence_qa": ocr_result.get("evidence_qa_result", {}),
         "complex_page_analysis": ocr_result.get("complex_page_analysis_result", {}),
+        "robustness_lab": ocr_result.get("robustness_lab_result", {}),
         # page_previews 数组。 用途：每一页的详细预览信息
         "page_previews": page_previews,
     }

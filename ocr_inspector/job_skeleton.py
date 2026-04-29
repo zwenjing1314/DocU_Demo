@@ -63,12 +63,14 @@ class JobSkeleton:
     direct_pdf_structure_json_path: Path
     evidence_qa_json_path: Path
     complex_page_analysis_json_path: Path
+    degradation_report_json_path: Path
     review_workbench_revisions_json_path: Path
     manifest_path: Path
     tables_index_path: Path
     analysis_index_path: Path
     bundle_segments_dir: Path
     review_overlays_dir: Path
+    robustness_lab_dir: Path
 
     @classmethod
     def create(
@@ -93,9 +95,10 @@ class JobSkeleton:
         tables_dir = output_dir / "tables"
         bundle_segments_dir = output_dir / "bundle_segments"
         review_overlays_dir = output_dir / "review_overlays"
+        robustness_lab_dir = output_dir / "robustness_lab"
         analysis_dir = output_dir / "analysis"
 
-        for path in (pages_dir, overlays_dir, texts_dir, markdown_dir, tables_dir, bundle_segments_dir, review_overlays_dir, analysis_dir):
+        for path in (pages_dir, overlays_dir, texts_dir, markdown_dir, tables_dir, bundle_segments_dir, review_overlays_dir, robustness_lab_dir, analysis_dir):
             path.mkdir(parents=True, exist_ok=True)
 
         suffix = Path(source_filename).suffix.lower()
@@ -129,12 +132,14 @@ class JobSkeleton:
             direct_pdf_structure_json_path=output_dir / "direct_pdf_structure.json",
             evidence_qa_json_path=output_dir / "evidence_qa.json",
             complex_page_analysis_json_path=output_dir / "complex_page_analysis.json",
+            degradation_report_json_path=output_dir / "degradation_report.json",
             review_workbench_revisions_json_path=output_dir / "review_workbench_revisions.json",
             manifest_path=output_dir / "job_manifest.json",
             tables_index_path=tables_dir / "index.html",
             analysis_index_path=analysis_dir / "index.html",
             bundle_segments_dir=bundle_segments_dir,
             review_overlays_dir=review_overlays_dir,
+            robustness_lab_dir=robustness_lab_dir,
         )
 
     def output_url(self, relative_path: str | Path) -> str:

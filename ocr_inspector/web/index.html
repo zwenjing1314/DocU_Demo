@@ -686,6 +686,14 @@
             <strong>${data.analysis.chart_candidate_count ?? 0}</strong>
           </article>
           <article class="stat">
+            <div class="muted">退化版本</div>
+            <strong>${data.analysis.degradation_variant_count ?? 0}</strong>
+          </article>
+          <article class="stat warn">
+            <div class="muted">脆弱层</div>
+            <strong>${data.analysis.robustness_most_fragile_layer ?? 'unknown'}</strong>
+          </article>
+          <article class="stat">
             <div class="muted">人工修订</div>
             <strong>${data.analysis.review_revision_count ?? 0}</strong>
           </article>
@@ -718,6 +726,7 @@
           <a class="pill-link" href="${data.downloads.direct_pdf_structure_json}" target="_blank">direct_pdf_structure.json</a>
           <a class="pill-link" href="${data.downloads.evidence_qa_json}" target="_blank">evidence_qa.json</a>
           <a class="pill-link" href="${data.downloads.complex_page_analysis_json}" target="_blank">complex_page_analysis.json</a>
+          <a class="pill-link" href="${data.downloads.degradation_report_json}" target="_blank">degradation_report.json</a>
           <a class="pill-link" href="${data.downloads.review_workbench}" target="_blank">Review Workbench</a>
           <a class="pill-link" href="${data.downloads.review_workbench_revisions_json}" target="_blank">review_workbench_revisions.json</a>
           <a class="pill-link" href="${data.downloads.analysis_page}" target="_blank">错误分析页</a>
@@ -747,6 +756,7 @@
             direct_pdf_structure: data.direct_pdf_structure?.analysis ?? {},
             evidence_qa: data.evidence_qa?.analysis ?? {},
             complex_page_analysis: data.complex_page_analysis?.analysis ?? {},
+            robustness_lab: data.robustness_lab?.analysis ?? {},
             total_check_status: data.analysis.total_check_status ?? 'not_available',
             form: data.form?.normalized_form ?? {},
             table_count: data.analysis.table_count ?? 0,

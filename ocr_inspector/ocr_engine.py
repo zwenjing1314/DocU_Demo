@@ -51,6 +51,7 @@ from ocr_engine_13_chunker import build_layout_aware_chunk_result, write_layout_
 from ocr_engine_14_direct_pdf_structurer import build_direct_pdf_structure_result, write_direct_pdf_structure_json
 from ocr_engine_15_evidence_qa import build_evidence_qa_result, write_evidence_qa_json
 from ocr_engine_16_complex_page_analyst import build_complex_page_analysis_result, write_complex_page_analysis_json
+from ocr_engine_17_robustness_lab import build_robustness_lab_result, write_degradation_report_json
 
 # 默认 OCR 配置：
 # --oem 3: 使用默认 OCR 引擎模式
@@ -2227,8 +2228,9 @@ def run_ocr_pipeline(
     markdown_dir = output_dir / "markdown"
     tables_dir = output_dir / "tables"
     review_overlays_dir = output_dir / "review_overlays"
+    robustness_lab_dir = output_dir / "robustness_lab"
 
-    for directory in (pages_dir, overlays_dir, texts_dir, markdown_dir, tables_dir, review_overlays_dir):
+    for directory in (pages_dir, overlays_dir, texts_dir, markdown_dir, tables_dir, review_overlays_dir, robustness_lab_dir):
         directory.mkdir(parents=True, exist_ok=True)
 
     page_image_paths = prepare_page_images(
@@ -2463,6 +2465,11 @@ def run_ocr_pipeline(
                 "topics": ["complex_element_parsing", "chart_qa", "error_explanation"],
                 "dispatch_after": "evidence_grounded_multi_page_qa",
             },
+            "robustness_lab": {
+                "enabled": True,
+                "topics": ["scan", "skew", "shadow", "curved_page", "screen_capture", "blur"],
+                "dispatch_after": "complex_page_analyst",
+            },
         },
         "page_count": len(pages),
         "layout_analysis": layout_analysis["stats"],
@@ -2626,6 +2633,17 @@ def run_ocr_pipeline(
     router_json_path = output_dir / "document_router.json"
     write_document_router_json(router_result, router_json_path)
 
+    # Robustness Lab 复用最终 OCR/抽取/问答指标，生成退化页图并判断最可能崩掉的层。
+    robustness_lab_result = build_robustness_lab_result(
+        ocr_result,
+        page_image_paths_by_page=page_image_paths_by_page_num,
+        output_dir=output_dir,
+    )
+    ocr_result["robustness_lab_result"] = robustness_lab_result
+
+    degradation_report_json_path = output_dir / "degradation_report.json"
+    write_degradation_report_json(robustness_lab_result, degradation_report_json_path)
+
     json_path = output_dir / "ocr.json"
     json_path.write_text(
         json.dumps(ocr_result, ensure_ascii=False, indent=2),
@@ -2649,7 +2667,9 @@ def run_ocr_pipeline(
         "direct_pdf_structure_json_path": direct_pdf_structure_json_path,
         "evidence_qa_json_path": evidence_qa_json_path,
         "complex_page_analysis_json_path": complex_page_analysis_json_path,
+        "degradation_report_json_path": degradation_report_json_path,
         "markdown_dir": markdown_dir,
         "tables_dir": tables_dir,
+        "robustness_lab_dir": robustness_lab_dir,
         "output_dir": output_dir,
     }
