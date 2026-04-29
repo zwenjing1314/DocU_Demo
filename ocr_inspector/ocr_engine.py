@@ -52,6 +52,11 @@ from ocr_engine_14_direct_pdf_structurer import build_direct_pdf_structure_resul
 from ocr_engine_15_evidence_qa import build_evidence_qa_result, write_evidence_qa_json
 from ocr_engine_16_complex_page_analyst import build_complex_page_analysis_result, write_complex_page_analysis_json
 from ocr_engine_17_robustness_lab import build_robustness_lab_result, write_degradation_report_json
+from ocr_engine_18_copilot import (
+    build_document_ai_copilot_result,
+    write_document_ai_copilot_json,
+    write_document_ai_copilot_markdown,
+)
 
 # 默认 OCR 配置：
 # --oem 3: 使用默认 OCR 引擎模式
@@ -2470,6 +2475,11 @@ def run_ocr_pipeline(
                 "topics": ["scan", "skew", "shadow", "curved_page", "screen_capture", "blur"],
                 "dispatch_after": "complex_page_analyst",
             },
+            "document_ai_copilot": {
+                "enabled": True,
+                "topics": ["end_to_end_pipeline", "demo_handoff", "json_markdown_export"],
+                "dispatch_after": "robustness_lab",
+            },
         },
         "page_count": len(pages),
         "layout_analysis": layout_analysis["stats"],
@@ -2644,6 +2654,15 @@ def run_ocr_pipeline(
     degradation_report_json_path = output_dir / "degradation_report.json"
     write_degradation_report_json(robustness_lab_result, degradation_report_json_path)
 
+    # End-to-End Copilot 不重新跑算法，而是把 1-17 的产物串成一条产品级演示链路。
+    document_ai_copilot_result = build_document_ai_copilot_result(ocr_result)
+    ocr_result["document_ai_copilot_result"] = document_ai_copilot_result
+
+    document_ai_copilot_json_path = output_dir / "document_ai_copilot.json"
+    document_ai_copilot_markdown_path = output_dir / "document_ai_copilot.md"
+    write_document_ai_copilot_json(document_ai_copilot_result, document_ai_copilot_json_path)
+    write_document_ai_copilot_markdown(document_ai_copilot_result, document_ai_copilot_markdown_path)
+
     json_path = output_dir / "ocr.json"
     json_path.write_text(
         json.dumps(ocr_result, ensure_ascii=False, indent=2),
@@ -2668,6 +2687,8 @@ def run_ocr_pipeline(
         "evidence_qa_json_path": evidence_qa_json_path,
         "complex_page_analysis_json_path": complex_page_analysis_json_path,
         "degradation_report_json_path": degradation_report_json_path,
+        "document_ai_copilot_json_path": document_ai_copilot_json_path,
+        "document_ai_copilot_markdown_path": document_ai_copilot_markdown_path,
         "markdown_dir": markdown_dir,
         "tables_dir": tables_dir,
         "robustness_lab_dir": robustness_lab_dir,

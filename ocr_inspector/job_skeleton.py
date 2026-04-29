@@ -64,6 +64,8 @@ class JobSkeleton:
     evidence_qa_json_path: Path
     complex_page_analysis_json_path: Path
     degradation_report_json_path: Path
+    document_ai_copilot_json_path: Path
+    document_ai_copilot_markdown_path: Path
     review_workbench_revisions_json_path: Path
     manifest_path: Path
     tables_index_path: Path
@@ -133,6 +135,8 @@ class JobSkeleton:
             evidence_qa_json_path=output_dir / "evidence_qa.json",
             complex_page_analysis_json_path=output_dir / "complex_page_analysis.json",
             degradation_report_json_path=output_dir / "degradation_report.json",
+            document_ai_copilot_json_path=output_dir / "document_ai_copilot.json",
+            document_ai_copilot_markdown_path=output_dir / "document_ai_copilot.md",
             review_workbench_revisions_json_path=output_dir / "review_workbench_revisions.json",
             manifest_path=output_dir / "job_manifest.json",
             tables_index_path=tables_dir / "index.html",
