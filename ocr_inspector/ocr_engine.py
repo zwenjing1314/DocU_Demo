@@ -48,6 +48,7 @@ from ocr_engine_10_contract_schema import build_contract_schema_result, write_co
 from ocr_engine_11_consolidator import build_multi_page_consolidation_result, write_multi_page_consolidation_json
 from ocr_engine_12_review_workbench import initialize_review_workbench_revisions
 from ocr_engine_13_chunker import build_layout_aware_chunk_result, write_layout_chunks_json
+from ocr_engine_14_direct_pdf_structurer import build_direct_pdf_structure_result, write_direct_pdf_structure_json
 
 # 默认 OCR 配置：
 # --oem 3: 使用默认 OCR 引擎模式
@@ -2444,6 +2445,11 @@ def run_ocr_pipeline(
                 "topics": ["layout_based_chunking", "heading_context", "table_context", "rag_chunks"],
                 "dispatch_after": "multi_page_consolidator",
             },
+            "direct_pdf_structurer": {
+                "enabled": True,
+                "topics": ["direct_pdf_understanding", "strict_schema_output"],
+                "dispatch_after": "layout_aware_chunker",
+            },
         },
         "page_count": len(pages),
         "layout_analysis": layout_analysis["stats"],
@@ -2571,6 +2577,17 @@ def run_ocr_pipeline(
     layout_chunks_json_path = output_dir / "layout_chunks.json"
     write_layout_chunks_json(layout_chunk_result, layout_chunks_json_path)
 
+    # Direct PDF Structurer 直接读取 PDF 原生结构，并输出严格 JSON schema。
+    direct_pdf_structure_result = build_direct_pdf_structure_result(
+        source_path=source_path,
+        source_kind=source_kind,
+        ocr_result=ocr_result,
+    )
+    ocr_result["direct_pdf_structure_result"] = direct_pdf_structure_result
+
+    direct_pdf_structure_json_path = output_dir / "direct_pdf_structure.json"
+    write_direct_pdf_structure_json(direct_pdf_structure_result, direct_pdf_structure_json_path)
+
     # Review Workbench 首次写一个空修订记录，后续人工保存时在同一文件中追加批次。
     initialize_review_workbench_revisions(output_dir, source_file=ocr_result["source_file"])
 
@@ -2602,6 +2619,7 @@ def run_ocr_pipeline(
         "contract_schema_json_path": contract_schema_json_path,
         "multi_page_consolidation_json_path": multi_page_consolidation_json_path,
         "layout_chunks_json_path": layout_chunks_json_path,
+        "direct_pdf_structure_json_path": direct_pdf_structure_json_path,
         "markdown_dir": markdown_dir,
         "tables_dir": tables_dir,
         "output_dir": output_dir,
