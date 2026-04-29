@@ -588,6 +588,10 @@
             <div class="muted">去重实体</div>
             <strong>${data.analysis.duplicate_entity_count ?? 0}</strong>
           </article>
+          <article class="stat">
+            <div class="muted">人工修订</div>
+            <strong>${data.analysis.review_revision_count ?? 0}</strong>
+          </article>
           <article class="stat warn">
             <div class="muted">低置信度词</div>
             <strong>${data.analysis.low_confidence_word_count}</strong>
@@ -613,6 +617,8 @@
           <a class="pill-link" href="${data.downloads.query_json}" target="_blank">query_extractor.json</a>
           <a class="pill-link" href="${data.downloads.contract_schema_json}" target="_blank">contract_schema.json</a>
           <a class="pill-link" href="${data.downloads.multi_page_consolidation_json}" target="_blank">multi_page_consolidation.json</a>
+          <a class="pill-link" href="${data.downloads.review_workbench}" target="_blank">Review Workbench</a>
+          <a class="pill-link" href="${data.downloads.review_workbench_revisions_json}" target="_blank">review_workbench_revisions.json</a>
           <a class="pill-link" href="${data.downloads.analysis_page}" target="_blank">错误分析页</a>
           <a class="pill-link" href="${data.downloads.job_manifest}" target="_blank">job_manifest.json</a>
         </div>

@@ -8,11 +8,12 @@ from collections import OrderedDict
 from pathlib import Path
 import json
 import os
+import re
 import shutil
 from threading import Lock
 from typing import Any
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import Body, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -31,12 +32,18 @@ from ocr_engine import (
     run_ocr_pipeline,
 )
 from ocr_engine_9_query import answer_document_query, load_query_json, write_query_json
+from ocr_engine_12_review_workbench import (
+    build_review_workbench_state,
+    load_review_workbench_revisions,
+    save_review_workbench_revisions,
+)
 
 BASE_DIR = Path(__file__).resolve().parent
 UPLOADS_DIR = BASE_DIR / "uploads"
 OUTPUTS_DIR = BASE_DIR / "outputs"
 WEB_DIR = BASE_DIR / "web"
 REQUEST_CACHE_SIZE = 16
+JOB_ID_RE = re.compile(r"^[a-f0-9]{12}$")
 
 for directory in (UPLOADS_DIR, OUTPUTS_DIR, WEB_DIR):
     directory.mkdir(parents=True, exist_ok=True)
@@ -70,6 +77,13 @@ def _env_bool(name: str, default: bool) -> bool:
     if value is None:
         return default
     return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _normalize_job_id(job_id: str) -> str:
+    normalized = (job_id or "").strip()
+    if not JOB_ID_RE.fullmatch(normalized):
+        raise HTTPException(status_code=400, detail="job_id 格式不正确。")
+    return normalized
 
 
 # 生成器表达式（Generator Expression） 的统计函数
@@ -110,6 +124,8 @@ def _write_job_manifest(
             "query_json": job.output_url(job.query_json_path),
             "contract_schema_json": job.output_url(job.contract_schema_json_path),
             "multi_page_consolidation_json": job.output_url(job.multi_page_consolidation_json_path),
+            "review_workbench": f"/review/{job.job_id}",
+            "review_workbench_revisions_json": job.output_url(job.review_workbench_revisions_json_path),
             "analysis_page": analysis_url,
             "pages_dir": job.output_url(job.pages_dir),
             "overlays_dir": job.output_url(job.overlays_dir),
@@ -392,6 +408,7 @@ def _build_response_payload(
                 + ocr_result.get("multi_page_consolidation_result", {}).get("analysis", {}).get("duplicate_transaction_count", 0)
             ),
             "total_check_status": ocr_result.get("multi_page_consolidation_result", {}).get("analysis", {}).get("total_check_status", "not_available"),
+            "review_revision_count": load_review_workbench_revisions(job.output_dir).get("analysis", {}).get("revision_count", 0),
             "analysis_page": analysis_url,
         },
         # downloads 子字典。 用途：提供完整文件的下载链接
@@ -408,6 +425,8 @@ def _build_response_payload(
             "query_json": job.output_url(job.query_json_path),
             "contract_schema_json": job.output_url(job.contract_schema_json_path),
             "multi_page_consolidation_json": job.output_url(job.multi_page_consolidation_json_path),
+            "review_workbench": f"/review/{job.job_id}",
+            "review_workbench_revisions_json": job.output_url(job.review_workbench_revisions_json_path),
             "analysis_page": analysis_url,
             "job_manifest": job.output_url(job.manifest_path),
         },
@@ -429,6 +448,8 @@ def _build_response_payload(
             "query_json": job.output_url(job.query_json_path),
             "contract_schema_json": job.output_url(job.contract_schema_json_path),
             "multi_page_consolidation_json": job.output_url(job.multi_page_consolidation_json_path),
+            "review_workbench": f"/review/{job.job_id}",
+            "review_workbench_revisions_json": job.output_url(job.review_workbench_revisions_json_path),
         },
         "tables": [
             {
@@ -461,6 +482,20 @@ def index() -> FileResponse:
     if not index_file.exists():
         raise HTTPException(status_code=500, detail="缺少 web/index.html 文件。")
     return FileResponse(index_file)
+
+
+@app.get("/review/{job_id}")
+def review_workbench(job_id: str) -> FileResponse:
+    """打开人工复核台页面。页面本身是静态 HTML，数据通过 API 拉取。"""
+    normalized_job_id = _normalize_job_id(job_id)
+    output_dir = OUTPUTS_DIR / normalized_job_id
+    if not (output_dir / "ocr.json").exists():
+        raise HTTPException(status_code=404, detail="未找到对应任务的 ocr.json。")
+
+    review_file = WEB_DIR / "review_workbench.html"
+    if not review_file.exists():
+        raise HTTPException(status_code=500, detail="缺少 web/review_workbench.html 文件。")
+    return FileResponse(review_file)
 
 
 @app.post("/ocr")
@@ -640,6 +675,57 @@ def query_document(
         "result": answer_payload,
         "query_history_count": len(query_result.get("query_history", [])),
         "query_json": f"/outputs/{normalized_job_id}/query_extractor.json",
+    }
+
+
+@app.get("/api/review/{job_id}/state")
+def get_review_workbench_state(job_id: str) -> dict[str, Any]:
+    """返回复核台状态：页面图、预测字段、低置信度队列和已有修订记录。"""
+    normalized_job_id = _normalize_job_id(job_id)
+    output_dir = OUTPUTS_DIR / normalized_job_id
+    try:
+        return build_review_workbench_state(
+            job_id=normalized_job_id,
+            output_dir=output_dir,
+            output_base_url=f"/outputs/{normalized_job_id}",
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="未找到对应任务的 ocr.json。") from exc
+
+
+@app.get("/api/review/{job_id}/revisions")
+def get_review_workbench_revisions(job_id: str) -> dict[str, Any]:
+    """单独读取人工修订记录，方便外部系统消费。"""
+    normalized_job_id = _normalize_job_id(job_id)
+    output_dir = OUTPUTS_DIR / normalized_job_id
+    if not (output_dir / "ocr.json").exists():
+        raise HTTPException(status_code=404, detail="未找到对应任务的 ocr.json。")
+    return load_review_workbench_revisions(output_dir)
+
+
+@app.post("/api/review/{job_id}/save")
+def save_review_workbench(job_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    """保存人工修订批次，形成可追踪的 review_workbench_revisions.json。"""
+    normalized_job_id = _normalize_job_id(job_id)
+    output_dir = OUTPUTS_DIR / normalized_job_id
+    if not (output_dir / "ocr.json").exists():
+        raise HTTPException(status_code=404, detail="未找到对应任务的 ocr.json。")
+
+    try:
+        saved_payload = save_review_workbench_revisions(
+            job_id=normalized_job_id,
+            output_dir=output_dir,
+            payload=payload,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return {
+        "job_id": normalized_job_id,
+        "message": "人工复核修订已保存。",
+        "revision_count": saved_payload.get("analysis", {}).get("revision_count", 0),
+        "revision_json": f"/outputs/{normalized_job_id}/review_workbench_revisions.json",
+        "revisions": saved_payload,
     }
 
 

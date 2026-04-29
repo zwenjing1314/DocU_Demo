@@ -46,6 +46,7 @@ from ocr_engine_8_review import (
 from ocr_engine_9_query import build_query_extractor_result, write_query_json
 from ocr_engine_10_contract_schema import build_contract_schema_result, write_contract_schema_json
 from ocr_engine_11_consolidator import build_multi_page_consolidation_result, write_multi_page_consolidation_json
+from ocr_engine_12_review_workbench import initialize_review_workbench_revisions
 
 # 默认 OCR 配置：
 # --oem 3: 使用默认 OCR 引擎模式
@@ -2432,6 +2433,11 @@ def run_ocr_pipeline(
                 "topics": ["cross_page_aggregation", "deduplication", "field_merge", "total_validation"],
                 "dispatch_after": "custom_schema_extractor",
             },
+            "review_workbench": {
+                "enabled": True,
+                "topics": ["human_review", "revision_history", "low_confidence_queue"],
+                "dispatch_after": "multi_page_consolidator",
+            },
         },
         "page_count": len(pages),
         "layout_analysis": layout_analysis["stats"],
@@ -2551,6 +2557,9 @@ def run_ocr_pipeline(
 
     multi_page_consolidation_json_path = output_dir / "multi_page_consolidation.json"
     write_multi_page_consolidation_json(multi_page_consolidation_result, multi_page_consolidation_json_path)
+
+    # Review Workbench 首次写一个空修订记录，后续人工保存时在同一文件中追加批次。
+    initialize_review_workbench_revisions(output_dir, source_file=ocr_result["source_file"])
 
     # 业务链路落定后再更新一次路由结果，让输出里能看到实际分发计划和最终标签。
     router_result = build_mixed_document_router_result(ocr_result)
