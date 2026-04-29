@@ -360,6 +360,7 @@
       <div style="margin-top: 14px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
         <button id="queryButton" type="button">开始提问</button>
         <button id="evidenceQaButton" type="button">证据问答</button>
+        <button id="chartQaButton" type="button">图表问答</button>
         <a id="queryJsonLink" class="pill-link hidden" target="_blank">query_extractor.json</a>
       </div>
       <div id="queryResult" style="margin-top: 14px;"></div>
@@ -379,6 +380,7 @@
     const queryInput = document.getElementById('queryInput');
     const queryButton = document.getElementById('queryButton');
     const evidenceQaButton = document.getElementById('evidenceQaButton');
+    const chartQaButton = document.getElementById('chartQaButton');
     const queryResultEl = document.getElementById('queryResult');
     const queryJsonLink = document.getElementById('queryJsonLink');
     const thresholdInput = document.getElementById('confidenceThreshold');
@@ -395,7 +397,8 @@
       search: '',
       onlyLowConfidence: false,
       lastQueryResult: null,
-      lastEvidenceQaResult: null
+      lastEvidenceQaResult: null,
+      lastChartQaResult: null
     };
 
 
@@ -483,6 +486,42 @@
       }
 
       const result = payload.result ?? {};
+      if (payload.mode === 'chart_qa') {
+        const evidenceItems = result.evidence_items ?? [];
+        const errors = result.error_explanations ?? [];
+        queryResultEl.innerHTML = `
+          <div class="word-section">
+            <div class="section-heading">图表问答结果</div>
+            <div class="word-chips">
+              <span class="word-chip"><strong>问题</strong> ${escapeHtml(payload.query || '')}</span>
+              <span class="word-chip"><strong>状态</strong> ${escapeHtml(result.status || '')}</span>
+              <span class="word-chip"><strong>答案</strong> ${escapeHtml(result.answer || '证据不足')}</span>
+              <span class="word-chip"><strong>证据页</strong> ${(result.evidence_pages || []).join(', ') || 'N/A'}</span>
+              <span class="word-chip"><strong>置信度</strong> ${result.confidence ?? 0}</span>
+            </div>
+            <div class="word-section">
+              <div class="section-heading">证据表（${evidenceItems.length}）</div>
+              <div class="word-chips">
+                ${evidenceItems.map((item) => `
+                  <span class="word-chip">
+                    <strong>${escapeHtml(item.table_id || item.candidate_id || '')}</strong>
+                    p${item.page_num ?? 'N/A'} · ${escapeHtml(item.series_name || '')}
+                  </span>
+                `).join('') || '<div class="empty">没有可用图表证据。</div>'}
+              </div>
+            </div>
+            <div class="word-section">
+              <div class="section-heading">错误解释</div>
+              <div class="word-chips">
+                ${errors.map((item) => `<span class="word-chip">${escapeHtml(item)}</span>`).join('') || '<span class="word-chip">暂无错误解释。</span>'}
+              </div>
+            </div>
+            <pre>${escapeHtml(JSON.stringify(result, null, 2))}</pre>
+          </div>
+        `;
+        return;
+      }
+
       if (payload.mode === 'evidence_qa') {
         const evidenceChunks = result.evidence_chunks ?? [];
         const evidenceHtml = evidenceChunks.length
@@ -643,6 +682,10 @@
             <strong>${data.analysis.evidence_unit_count ?? 0}</strong>
           </article>
           <article class="stat">
+            <div class="muted">图表候选</div>
+            <strong>${data.analysis.chart_candidate_count ?? 0}</strong>
+          </article>
+          <article class="stat">
             <div class="muted">人工修订</div>
             <strong>${data.analysis.review_revision_count ?? 0}</strong>
           </article>
@@ -674,6 +717,7 @@
           <a class="pill-link" href="${data.downloads.layout_chunks_json}" target="_blank">layout_chunks.json</a>
           <a class="pill-link" href="${data.downloads.direct_pdf_structure_json}" target="_blank">direct_pdf_structure.json</a>
           <a class="pill-link" href="${data.downloads.evidence_qa_json}" target="_blank">evidence_qa.json</a>
+          <a class="pill-link" href="${data.downloads.complex_page_analysis_json}" target="_blank">complex_page_analysis.json</a>
           <a class="pill-link" href="${data.downloads.review_workbench}" target="_blank">Review Workbench</a>
           <a class="pill-link" href="${data.downloads.review_workbench_revisions_json}" target="_blank">review_workbench_revisions.json</a>
           <a class="pill-link" href="${data.downloads.analysis_page}" target="_blank">错误分析页</a>
@@ -702,6 +746,7 @@
             layout_chunks: data.layout_chunks?.analysis ?? {},
             direct_pdf_structure: data.direct_pdf_structure?.analysis ?? {},
             evidence_qa: data.evidence_qa?.analysis ?? {},
+            complex_page_analysis: data.complex_page_analysis?.analysis ?? {},
             total_check_status: data.analysis.total_check_status ?? 'not_available',
             form: data.form?.normalized_form ?? {},
             table_count: data.analysis.table_count ?? 0,
@@ -836,6 +881,7 @@
       state.data = null;  // 清空旧的分析结果
       state.lastQueryResult = null;
       state.lastEvidenceQaResult = null;
+      state.lastChartQaResult = null;
       state.threshold = normalizeThreshold(thresholdInput.value);
       state.search = searchInput.value.trim().toLowerCase();
       state.onlyLowConfidence = onlyLowConfidenceInput.checked;
@@ -960,6 +1006,46 @@
       } finally {
         evidenceQaButton.disabled = false;
         evidenceQaButton.textContent = '证据问答';
+      }
+    });
+
+    chartQaButton.addEventListener('click', async () => {
+      if (!state.data?.job_id) {
+        queryResultEl.innerHTML = '<div class="empty">请先完成 OCR。</div>';
+        return;
+      }
+
+      const query = queryInput.value.trim();
+      if (!query) {
+        queryResultEl.innerHTML = '<div class="empty">请先输入图表问题。</div>';
+        return;
+      }
+
+      chartQaButton.disabled = true;
+      chartQaButton.textContent = '分析图表中…';
+      queryResultEl.innerHTML = '<div class="empty">正在查找图表证据，请稍候……</div>';
+
+      try {
+        const formData = new FormData();
+        formData.append('job_id', state.data.job_id);
+        formData.append('query', query);
+
+        const response = await fetch('/complex-chart-qa', {
+          method: 'POST',
+          body: formData
+        });
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.detail || '图表问答失败');
+        }
+
+        state.lastChartQaResult = {...data, mode: 'chart_qa'};
+        renderQueryResult(state.lastChartQaResult);
+      } catch (error) {
+        queryResultEl.innerHTML = `<div class="empty">${escapeHtml(error.message || '图表问答失败')}</div>`;
+      } finally {
+        chartQaButton.disabled = false;
+        chartQaButton.textContent = '图表问答';
       }
     });
   </script>

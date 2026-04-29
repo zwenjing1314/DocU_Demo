@@ -38,6 +38,11 @@ from ocr_engine_12_review_workbench import (
     save_review_workbench_revisions,
 )
 from ocr_engine_15_evidence_qa import answer_evidence_question, load_evidence_qa_json, write_evidence_qa_json
+from ocr_engine_16_complex_page_analyst import (
+    answer_chart_question,
+    load_complex_page_analysis_json,
+    write_complex_page_analysis_json,
+)
 
 BASE_DIR = Path(__file__).resolve().parent
 UPLOADS_DIR = BASE_DIR / "uploads"
@@ -128,6 +133,7 @@ def _write_job_manifest(
             "layout_chunks_json": job.output_url(job.layout_chunks_json_path),
             "direct_pdf_structure_json": job.output_url(job.direct_pdf_structure_json_path),
             "evidence_qa_json": job.output_url(job.evidence_qa_json_path),
+            "complex_page_analysis_json": job.output_url(job.complex_page_analysis_json_path),
             "review_workbench": f"/review/{job.job_id}",
             "review_workbench_revisions_json": job.output_url(job.review_workbench_revisions_json_path),
             "analysis_page": analysis_url,
@@ -420,6 +426,8 @@ def _build_response_payload(
             "direct_pdf_native_text_pages": ocr_result.get("direct_pdf_structure_result", {}).get("analysis", {}).get("native_text_page_count", 0),
             "evidence_unit_count": ocr_result.get("evidence_qa_result", {}).get("analysis", {}).get("unit_count", 0),
             "evidence_query_count": ocr_result.get("evidence_qa_result", {}).get("analysis", {}).get("query_history_count", 0),
+            "chart_candidate_count": ocr_result.get("complex_page_analysis_result", {}).get("analysis", {}).get("chart_candidate_count", 0),
+            "chart_qa_ready": ocr_result.get("complex_page_analysis_result", {}).get("analysis", {}).get("qa_ready", False),
             "review_revision_count": load_review_workbench_revisions(job.output_dir).get("analysis", {}).get("revision_count", 0),
             "analysis_page": analysis_url,
         },
@@ -440,6 +448,7 @@ def _build_response_payload(
             "layout_chunks_json": job.output_url(job.layout_chunks_json_path),
             "direct_pdf_structure_json": job.output_url(job.direct_pdf_structure_json_path),
             "evidence_qa_json": job.output_url(job.evidence_qa_json_path),
+            "complex_page_analysis_json": job.output_url(job.complex_page_analysis_json_path),
             "review_workbench": f"/review/{job.job_id}",
             "review_workbench_revisions_json": job.output_url(job.review_workbench_revisions_json_path),
             "analysis_page": analysis_url,
@@ -466,6 +475,7 @@ def _build_response_payload(
             "layout_chunks_json": job.output_url(job.layout_chunks_json_path),
             "direct_pdf_structure_json": job.output_url(job.direct_pdf_structure_json_path),
             "evidence_qa_json": job.output_url(job.evidence_qa_json_path),
+            "complex_page_analysis_json": job.output_url(job.complex_page_analysis_json_path),
             "review_workbench": f"/review/{job.job_id}",
             "review_workbench_revisions_json": job.output_url(job.review_workbench_revisions_json_path),
         },
@@ -492,6 +502,7 @@ def _build_response_payload(
         "layout_chunks": ocr_result.get("layout_chunk_result", {}),
         "direct_pdf_structure": ocr_result.get("direct_pdf_structure_result", {}),
         "evidence_qa": ocr_result.get("evidence_qa_result", {}),
+        "complex_page_analysis": ocr_result.get("complex_page_analysis_result", {}),
         # page_previews 数组。 用途：每一页的详细预览信息
         "page_previews": page_previews,
     }
@@ -725,6 +736,35 @@ def evidence_qa_document(
         "result": answer_payload,
         "query_history_count": len(qa_result.get("query_history", [])),
         "evidence_qa_json": f"/outputs/{normalized_job_id}/evidence_qa.json",
+    }
+
+
+@app.post("/complex-chart-qa")
+def complex_chart_qa_document(
+        job_id: str = Form(...),
+        query: str = Form(...),
+) -> dict[str, Any]:
+    """复杂页面图表问答：回答必须带表格/页面证据和错误解释。"""
+    normalized_job_id = _normalize_job_id(job_id)
+    normalized_query = (query or "").strip()
+    if not normalized_query:
+        raise HTTPException(status_code=400, detail="缺少 query。")
+
+    output_dir = OUTPUTS_DIR / normalized_job_id
+    analysis_json_path = output_dir / "complex_page_analysis.json"
+    if not analysis_json_path.exists():
+        raise HTTPException(status_code=404, detail="未找到对应任务的 complex_page_analysis.json。")
+
+    analysis_result = load_complex_page_analysis_json(analysis_json_path)
+    answer_payload = answer_chart_question(analysis_result, normalized_query)
+    write_complex_page_analysis_json(analysis_result, analysis_json_path)
+
+    return {
+        "job_id": normalized_job_id,
+        "query": normalized_query,
+        "result": answer_payload,
+        "query_history_count": len(analysis_result.get("query_history", [])),
+        "complex_page_analysis_json": f"/outputs/{normalized_job_id}/complex_page_analysis.json",
     }
 
 

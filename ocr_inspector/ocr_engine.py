@@ -50,6 +50,7 @@ from ocr_engine_12_review_workbench import initialize_review_workbench_revisions
 from ocr_engine_13_chunker import build_layout_aware_chunk_result, write_layout_chunks_json
 from ocr_engine_14_direct_pdf_structurer import build_direct_pdf_structure_result, write_direct_pdf_structure_json
 from ocr_engine_15_evidence_qa import build_evidence_qa_result, write_evidence_qa_json
+from ocr_engine_16_complex_page_analyst import build_complex_page_analysis_result, write_complex_page_analysis_json
 
 # 默认 OCR 配置：
 # --oem 3: 使用默认 OCR 引擎模式
@@ -2456,6 +2457,12 @@ def run_ocr_pipeline(
                 "topics": ["multi_page_qa", "evidence_pages", "traceable_answers"],
                 "dispatch_after": "direct_pdf_structurer",
             },
+            "complex_page_analyst": {
+                "enabled": True,
+                "selected_domain": "chart_qa",
+                "topics": ["complex_element_parsing", "chart_qa", "error_explanation"],
+                "dispatch_after": "evidence_grounded_multi_page_qa",
+            },
         },
         "page_count": len(pages),
         "layout_analysis": layout_analysis["stats"],
@@ -2601,6 +2608,13 @@ def run_ocr_pipeline(
     evidence_qa_json_path = output_dir / "evidence_qa.json"
     write_evidence_qa_json(evidence_qa_result, evidence_qa_json_path)
 
+    # Complex Page Analyst 这里选择图表问答做深，基于表格/布局证据回答并解释错误边界。
+    complex_page_analysis_result = build_complex_page_analysis_result(ocr_result)
+    ocr_result["complex_page_analysis_result"] = complex_page_analysis_result
+
+    complex_page_analysis_json_path = output_dir / "complex_page_analysis.json"
+    write_complex_page_analysis_json(complex_page_analysis_result, complex_page_analysis_json_path)
+
     # Review Workbench 首次写一个空修订记录，后续人工保存时在同一文件中追加批次。
     initialize_review_workbench_revisions(output_dir, source_file=ocr_result["source_file"])
 
@@ -2634,6 +2648,7 @@ def run_ocr_pipeline(
         "layout_chunks_json_path": layout_chunks_json_path,
         "direct_pdf_structure_json_path": direct_pdf_structure_json_path,
         "evidence_qa_json_path": evidence_qa_json_path,
+        "complex_page_analysis_json_path": complex_page_analysis_json_path,
         "markdown_dir": markdown_dir,
         "tables_dir": tables_dir,
         "output_dir": output_dir,
