@@ -109,6 +109,7 @@ def _write_job_manifest(
             "review_json": job.output_url(job.review_json_path),
             "query_json": job.output_url(job.query_json_path),
             "contract_schema_json": job.output_url(job.contract_schema_json_path),
+            "multi_page_consolidation_json": job.output_url(job.multi_page_consolidation_json_path),
             "analysis_page": analysis_url,
             "pages_dir": job.output_url(job.pages_dir),
             "overlays_dir": job.output_url(job.overlays_dir),
@@ -384,6 +385,13 @@ def _build_response_payload(
             "query_candidate_count": ocr_result.get("query_extractor_result", {}).get("analysis", {}).get("candidate_count", 0),
             "contract_field_count": ocr_result.get("contract_schema_result", {}).get("analysis", {}).get("field_count", 0),
             "contract_detected": ocr_result.get("contract_schema_result", {}).get("analysis", {}).get("is_contract_like", False),
+            "consolidated_item_count": ocr_result.get("multi_page_consolidation_result", {}).get("analysis", {}).get("consolidated_item_count", 0),
+            "consolidated_transaction_count": ocr_result.get("multi_page_consolidation_result", {}).get("analysis", {}).get("transaction_count", 0),
+            "duplicate_entity_count": (
+                ocr_result.get("multi_page_consolidation_result", {}).get("analysis", {}).get("duplicate_item_count", 0)
+                + ocr_result.get("multi_page_consolidation_result", {}).get("analysis", {}).get("duplicate_transaction_count", 0)
+            ),
+            "total_check_status": ocr_result.get("multi_page_consolidation_result", {}).get("analysis", {}).get("total_check_status", "not_available"),
             "analysis_page": analysis_url,
         },
         # downloads 子字典。 用途：提供完整文件的下载链接
@@ -399,6 +407,7 @@ def _build_response_payload(
             "review_json": job.output_url(job.review_json_path),
             "query_json": job.output_url(job.query_json_path),
             "contract_schema_json": job.output_url(job.contract_schema_json_path),
+            "multi_page_consolidation_json": job.output_url(job.multi_page_consolidation_json_path),
             "analysis_page": analysis_url,
             "job_manifest": job.output_url(job.manifest_path),
         },
@@ -419,6 +428,7 @@ def _build_response_payload(
             "review_overlays_dir": job.output_url(job.review_overlays_dir),
             "query_json": job.output_url(job.query_json_path),
             "contract_schema_json": job.output_url(job.contract_schema_json_path),
+            "multi_page_consolidation_json": job.output_url(job.multi_page_consolidation_json_path),
         },
         "tables": [
             {
@@ -439,6 +449,7 @@ def _build_response_payload(
         "signature_handwriting_review": ocr_result.get("signature_handwriting_review_result", {}),
         "query_extractor": ocr_result.get("query_extractor_result", {}),
         "contract_schema": ocr_result.get("contract_schema_result", {}),
+        "multi_page_consolidation": ocr_result.get("multi_page_consolidation_result", {}),
         # page_previews 数组。 用途：每一页的详细预览信息
         "page_previews": page_previews,
     }

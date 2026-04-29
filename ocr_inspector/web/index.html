@@ -576,6 +576,18 @@
             <div class="muted">合同识别</div>
             <strong>${data.analysis.contract_detected ? '是' : '否'}</strong>
           </article>
+          <article class="stat">
+            <div class="muted">跨页明细</div>
+            <strong>${data.analysis.consolidated_item_count ?? 0}</strong>
+          </article>
+          <article class="stat">
+            <div class="muted">跨页交易</div>
+            <strong>${data.analysis.consolidated_transaction_count ?? 0}</strong>
+          </article>
+          <article class="stat">
+            <div class="muted">去重实体</div>
+            <strong>${data.analysis.duplicate_entity_count ?? 0}</strong>
+          </article>
           <article class="stat warn">
             <div class="muted">低置信度词</div>
             <strong>${data.analysis.low_confidence_word_count}</strong>
@@ -600,6 +612,7 @@
           <a class="pill-link" href="${data.downloads.review_json}" target="_blank">signature_handwriting_review.json</a>
           <a class="pill-link" href="${data.downloads.query_json}" target="_blank">query_extractor.json</a>
           <a class="pill-link" href="${data.downloads.contract_schema_json}" target="_blank">contract_schema.json</a>
+          <a class="pill-link" href="${data.downloads.multi_page_consolidation_json}" target="_blank">multi_page_consolidation.json</a>
           <a class="pill-link" href="${data.downloads.analysis_page}" target="_blank">错误分析页</a>
           <a class="pill-link" href="${data.downloads.job_manifest}" target="_blank">job_manifest.json</a>
         </div>
@@ -622,6 +635,8 @@
             query_extractor: data.query_extractor ?? {},
             contract_detected: data.analysis.contract_detected ?? false,
             contract_schema: data.contract_schema ?? {},
+            multi_page_consolidation: data.multi_page_consolidation ?? {},
+            total_check_status: data.analysis.total_check_status ?? 'not_available',
             form: data.form?.normalized_form ?? {},
             table_count: data.analysis.table_count ?? 0,
             receipt_invoice: data.receipt_invoice?.normalized_receipt ?? {},
