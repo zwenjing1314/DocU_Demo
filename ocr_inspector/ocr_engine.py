@@ -47,6 +47,7 @@ from ocr_engine_9_query import build_query_extractor_result, write_query_json
 from ocr_engine_10_contract_schema import build_contract_schema_result, write_contract_schema_json
 from ocr_engine_11_consolidator import build_multi_page_consolidation_result, write_multi_page_consolidation_json
 from ocr_engine_12_review_workbench import initialize_review_workbench_revisions
+from ocr_engine_13_chunker import build_layout_aware_chunk_result, write_layout_chunks_json
 
 # 默认 OCR 配置：
 # --oem 3: 使用默认 OCR 引擎模式
@@ -2438,6 +2439,11 @@ def run_ocr_pipeline(
                 "topics": ["human_review", "revision_history", "low_confidence_queue"],
                 "dispatch_after": "multi_page_consolidator",
             },
+            "layout_aware_chunker": {
+                "enabled": True,
+                "topics": ["layout_based_chunking", "heading_context", "table_context", "rag_chunks"],
+                "dispatch_after": "multi_page_consolidator",
+            },
         },
         "page_count": len(pages),
         "layout_analysis": layout_analysis["stats"],
@@ -2558,6 +2564,13 @@ def run_ocr_pipeline(
     multi_page_consolidation_json_path = output_dir / "multi_page_consolidation.json"
     write_multi_page_consolidation_json(multi_page_consolidation_result, multi_page_consolidation_json_path)
 
+    # Layout-aware Chunker 将标题链、表格上下文和页码保留下来，供 RAG 检索使用。
+    layout_chunk_result = build_layout_aware_chunk_result(ocr_result)
+    ocr_result["layout_chunk_result"] = layout_chunk_result
+
+    layout_chunks_json_path = output_dir / "layout_chunks.json"
+    write_layout_chunks_json(layout_chunk_result, layout_chunks_json_path)
+
     # Review Workbench 首次写一个空修订记录，后续人工保存时在同一文件中追加批次。
     initialize_review_workbench_revisions(output_dir, source_file=ocr_result["source_file"])
 
@@ -2588,6 +2601,7 @@ def run_ocr_pipeline(
         "query_json_path": query_json_path,
         "contract_schema_json_path": contract_schema_json_path,
         "multi_page_consolidation_json_path": multi_page_consolidation_json_path,
+        "layout_chunks_json_path": layout_chunks_json_path,
         "markdown_dir": markdown_dir,
         "tables_dir": tables_dir,
         "output_dir": output_dir,

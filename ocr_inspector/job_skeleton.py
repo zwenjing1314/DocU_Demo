@@ -59,6 +59,7 @@ class JobSkeleton:
     query_json_path: Path
     contract_schema_json_path: Path
     multi_page_consolidation_json_path: Path
+    layout_chunks_json_path: Path
     review_workbench_revisions_json_path: Path
     manifest_path: Path
     tables_index_path: Path
@@ -121,6 +122,7 @@ class JobSkeleton:
             query_json_path=output_dir / "query_extractor.json",
             contract_schema_json_path=output_dir / "contract_schema.json",
             multi_page_consolidation_json_path=output_dir / "multi_page_consolidation.json",
+            layout_chunks_json_path=output_dir / "layout_chunks.json",
             review_workbench_revisions_json_path=output_dir / "review_workbench_revisions.json",
             manifest_path=output_dir / "job_manifest.json",
             tables_index_path=tables_dir / "index.html",

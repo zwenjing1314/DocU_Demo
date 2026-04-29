@@ -124,6 +124,7 @@ def _write_job_manifest(
             "query_json": job.output_url(job.query_json_path),
             "contract_schema_json": job.output_url(job.contract_schema_json_path),
             "multi_page_consolidation_json": job.output_url(job.multi_page_consolidation_json_path),
+            "layout_chunks_json": job.output_url(job.layout_chunks_json_path),
             "review_workbench": f"/review/{job.job_id}",
             "review_workbench_revisions_json": job.output_url(job.review_workbench_revisions_json_path),
             "analysis_page": analysis_url,
@@ -408,6 +409,9 @@ def _build_response_payload(
                 + ocr_result.get("multi_page_consolidation_result", {}).get("analysis", {}).get("duplicate_transaction_count", 0)
             ),
             "total_check_status": ocr_result.get("multi_page_consolidation_result", {}).get("analysis", {}).get("total_check_status", "not_available"),
+            "layout_chunk_count": ocr_result.get("layout_chunk_result", {}).get("analysis", {}).get("chunk_count", 0),
+            "layout_table_chunk_count": ocr_result.get("layout_chunk_result", {}).get("analysis", {}).get("table_chunk_count", 0),
+            "heading_context_chunk_count": ocr_result.get("layout_chunk_result", {}).get("analysis", {}).get("heading_context_chunk_count", 0),
             "review_revision_count": load_review_workbench_revisions(job.output_dir).get("analysis", {}).get("revision_count", 0),
             "analysis_page": analysis_url,
         },
@@ -425,6 +429,7 @@ def _build_response_payload(
             "query_json": job.output_url(job.query_json_path),
             "contract_schema_json": job.output_url(job.contract_schema_json_path),
             "multi_page_consolidation_json": job.output_url(job.multi_page_consolidation_json_path),
+            "layout_chunks_json": job.output_url(job.layout_chunks_json_path),
             "review_workbench": f"/review/{job.job_id}",
             "review_workbench_revisions_json": job.output_url(job.review_workbench_revisions_json_path),
             "analysis_page": analysis_url,
@@ -448,6 +453,7 @@ def _build_response_payload(
             "query_json": job.output_url(job.query_json_path),
             "contract_schema_json": job.output_url(job.contract_schema_json_path),
             "multi_page_consolidation_json": job.output_url(job.multi_page_consolidation_json_path),
+            "layout_chunks_json": job.output_url(job.layout_chunks_json_path),
             "review_workbench": f"/review/{job.job_id}",
             "review_workbench_revisions_json": job.output_url(job.review_workbench_revisions_json_path),
         },
@@ -471,6 +477,7 @@ def _build_response_payload(
         "query_extractor": ocr_result.get("query_extractor_result", {}),
         "contract_schema": ocr_result.get("contract_schema_result", {}),
         "multi_page_consolidation": ocr_result.get("multi_page_consolidation_result", {}),
+        "layout_chunks": ocr_result.get("layout_chunk_result", {}),
         # page_previews 数组。 用途：每一页的详细预览信息
         "page_previews": page_previews,
     }
